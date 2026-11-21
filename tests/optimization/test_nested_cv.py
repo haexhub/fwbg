@@ -7,11 +7,12 @@ Testet:
 - slice_targets_for_fold: Index-Mapping, Grenzfälle
 - run_inner_cv: Early Termination, Fold Stability, Feature Selection
 """
+
 import pytest
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from fwbg.optimization.nested_cv import (
     nested_cv_split,
@@ -41,14 +42,17 @@ def create_test_df(n_rows: int, seed: int = 42) -> pd.DataFrame:
     low = close - np.abs(np.random.randn(n_rows) * 0.05)
     open_price = close + np.random.randn(n_rows) * 0.02
 
-    df = pd.DataFrame({
-        "O": open_price,
-        "H": high,
-        "L": low,
-        "C": close,
-        "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
-        "_regime": np.full(n_rows, 7, dtype=np.int8),
-    }, index=pd.DatetimeIndex(dates))
+    df = pd.DataFrame(
+        {
+            "O": open_price,
+            "H": high,
+            "L": low,
+            "C": close,
+            "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
+            "_regime": np.full(n_rows, 7, dtype=np.int8),
+        },
+        index=pd.DatetimeIndex(dates),
+    )
 
     # Einige Feature-Spalten hinzufügen
     df["trend_rsi_14"] = np.random.rand(n_rows) * 100
@@ -69,6 +73,7 @@ def create_mock_context(
     """Erstellt einen Mock-SimulationContext."""
     ctx = Mock(spec=SimulationContext)
     ctx.symbol = symbol
+    ctx.seed = None  # no strategy seed; a bare Mock attribute would be a Mock
     ctx.spread = spread
     ctx.long_enabled = long_enabled
     ctx.short_enabled = short_enabled
@@ -89,11 +94,12 @@ def create_mock_context(
         "n_estimators": 100,
         "max_depth": 5,
         "learning_rate": 0.1,
-        "random_state": 42
+        "random_state": 42,
     }
     ctx.preprocessing_plugins = []  # No preprocessing by default
     ctx.exit_strategy = "fixed"
     ctx.exit_params = {}
+    ctx.financing_rate = 0.0
     ctx.entry_modifier = None
     ctx.entry_modifier_params = {}
     ctx.probability_calibration = False
@@ -149,8 +155,9 @@ class TestNestedCvSplit:
 
         # In jedem Fold: Train muss vor Val kommen
         for train_df, val_df in result["inner_folds"]:
-            assert train_df.index[-1] < val_df.index[0], \
+            assert train_df.index[-1] < val_df.index[0], (
                 "Train endet nicht vor Val Start!"
+            )
 
     def test_minimum_data(self):
         """Test: Verhalten bei sehr wenig Daten."""
@@ -206,7 +213,8 @@ class TestComputeTargets:
         assert len(targets_long) == len(df)
         assert len(targets_short) == len(df)
         assert targets_long.dtype in [np.float64, np.int64]
-        assert set(np.unique(targets_long)).issubset({0, 1, 0.0, 1.0})
+        known = targets_long[~np.isnan(targets_long)]  # open windows are NaN
+        assert set(np.unique(known)).issubset({0, 1, 0.0, 1.0})
 
     def test_direction_filtering(self):
         """Test: Long/Short werden korrekt gefiltert."""
@@ -261,7 +269,10 @@ class TestSliceTargetsForFold:
         fold_df = df.iloc[200:400].copy()
 
         t_l, t_s, has_l, has_s = slice_targets_for_fold(
-            fold_df, ctx, tp=20, sl=10,
+            fold_df,
+            ctx,
+            tp=20,
+            sl=10,
         )
         assert len(t_l) == 200
         assert len(t_s) == 200
@@ -301,9 +312,7 @@ class TestSelectFeaturesFromFold:
         targets = np.zeros(len(df))  # Keine positiven Targets
         features = ["trend_rsi_14", "adx_14"]
 
-        selected, _ = select_features_from_fold(
-            df, targets, features, min_trades=100
-        )
+        selected, _ = select_features_from_fold(df, targets, features, min_trades=100)
 
         assert selected is None
 
@@ -313,25 +322,35 @@ class TestSelectFeaturesFromFold:
         targets = np.random.randint(0, 2, len(df))
         features = ["nonexistent_feature_1", "nonexistent_feature_2"]
 
-        selected, _ = select_features_from_fold(
-            df, targets, features, min_trades=10
-        )
+        selected, _ = select_features_from_fold(df, targets, features, min_trades=10)
 
         assert selected is None
 
     def test_boruta_via_plugin(self):
         """Test: Feature Selection via Plugin-Interface."""
+        pytest.importorskip("fwbg_premium")
         df = create_test_df(1000)
         # Targets die mit einem Feature korrelieren
         targets = (df["trend_rsi_14"].values > 50).astype(int)
         features = ["trend_rsi_14", "adx_14", "mom_stoch_14"]
 
-        plugins = [{"name": "boruta", "params": {
-            "n_iter": 3, "n_estimators": 20, "max_depth": 3, "min_z_score": 0.0
-        }}]
+        plugins = [
+            {
+                "name": "boruta",
+                "params": {
+                    "n_iter": 3,
+                    "n_estimators": 20,
+                    "max_depth": 3,
+                    "min_z_score": 0.0,
+                },
+            }
+        ]
 
         selected, metadata = select_features_from_fold(
-            df, targets, features, min_trades=10,
+            df,
+            targets,
+            features,
+            min_trades=10,
             feature_selection_plugins=plugins,
         )
 
@@ -416,8 +435,16 @@ class TestSimulateTradesSequential:
         probs_long[:, 1] = 0.8
 
         result = simulate_trades_sequential(
-            df, probs_long, None, 1, None, ct=0.5, tp=20, sl=10, ctx=ctx,
-            return_detailed=True
+            df,
+            probs_long,
+            None,
+            1,
+            None,
+            ct=0.5,
+            tp=20,
+            sl=10,
+            ctx=ctx,
+            return_detailed=True,
         )
 
         assert "trades_detailed" in result
@@ -435,8 +462,11 @@ class TestRunInnerCv:
         result = run_inner_cv(
             inner_folds=[],
             group_features=["trend_rsi_14"],
-            tp=20, sl=10, ctx=ctx,
-            global_grid_pos=0, total_grid_combos=1
+            tp=20,
+            sl=10,
+            ctx=ctx,
+            global_grid_pos=0,
+            total_grid_combos=1,
         )
 
         assert result["success"] is False
@@ -456,17 +486,18 @@ class TestRunInnerCv:
         ]
 
         # Mit Mock um schnell zu laufen
-        with patch('fwbg.optimization.nested_cv.compute_targets') as mock_compute:
+        with patch("fwbg.optimization.nested_cv.compute_targets") as mock_compute:
             # Simuliere schlechte Targets (keine Wins)
-            mock_compute.return_value = (
-                np.zeros(1000), np.zeros(1000), False, False
-            )
+            mock_compute.return_value = (np.zeros(1000), np.zeros(1000), False, False)
 
             result = run_inner_cv(
                 inner_folds=folds,
                 group_features=["trend_rsi_14"],
-                tp=20, sl=10, ctx=ctx,
-                global_grid_pos=0, total_grid_combos=1
+                tp=20,
+                sl=10,
+                ctx=ctx,
+                global_grid_pos=0,
+                total_grid_combos=1,
             )
 
             assert result["success"] is False
@@ -490,7 +521,7 @@ class TestEvaluateOnHoldout:
             holdout_df=df.iloc[500:],
             inner_df=df.iloc[:500],
             candidate=candidate,
-            ctx=ctx
+            ctx=ctx,
         )
 
         assert result["trades"] == []
@@ -522,7 +553,7 @@ class TestEdgeCases:
         targets_l, targets_s, _, _ = compute_targets(df, 20, 10, ctx)
 
         # Bei konstanten Preisen: Alle Targets sollten 0 sein
-        assert np.sum(targets_l) == 0 or np.sum(targets_l) > 0  # Keine Assertion
+        assert np.nansum(targets_l) == 0 or np.nansum(targets_l) > 0  # Keine Assertion
 
     def test_single_row_df(self):
         """Test: DataFrame mit nur einer Zeile."""
@@ -567,8 +598,7 @@ class TestSeparateCTEvaluation:
         probs_short[:, 1] = 0.7
 
         result = _evaluate_separate_ct(
-            df, probs_long, probs_short, 1, 1,
-            tp=20, sl=10, ctx=ctx
+            df, probs_long, probs_short, 1, 1, tp=20, sl=10, ctx=ctx
         )
 
         best_ct, best_pnl, trades_info = result
@@ -594,8 +624,7 @@ class TestSeparateCTEvaluation:
         probs_short = np.ones((len(df), 2)) * 0.9
 
         result = _evaluate_separate_ct(
-            df, probs_long, probs_short, 1, 1,
-            tp=20, sl=10, ctx=ctx
+            df, probs_long, probs_short, 1, 1, tp=20, sl=10, ctx=ctx
         )
 
         best_ct, best_pnl, trades_info = result
@@ -619,8 +648,7 @@ class TestSeparateCTEvaluation:
         probs_short[:, 1] = 0.7
 
         result = _evaluate_separate_ct(
-            df, probs_long, probs_short, 1, 1,
-            tp=20, sl=10, ctx=ctx
+            df, probs_long, probs_short, 1, 1, tp=20, sl=10, ctx=ctx
         )
 
         best_ct, best_pnl, trades_info = result
@@ -652,8 +680,14 @@ class TestSeparateCTEvaluation:
         probs_short[:, 1] = 0.7
 
         result = _evaluate_separate_ct(
-            df, None, probs_short, None, 1,  # Keine Long-Probs
-            tp=20, sl=10, ctx=ctx
+            df,
+            None,
+            probs_short,
+            None,
+            1,  # Keine Long-Probs
+            tp=20,
+            sl=10,
+            ctx=ctx,
         )
 
         best_ct, best_pnl, trades_info = result
@@ -666,3 +700,219 @@ class TestSeparateCTEvaluation:
             assert isinstance(best_ct, tuple)
             # ct_long sollte ein Fallback-Wert sein
             assert best_ct[0] in ctx.grid_ct or best_ct[0] == 0.55
+
+
+def _fold_stub(pnl, n_trades=10, win=True):
+    trades = [{"pnl_raw": pnl / n_trades, "result": 1.0 if win else -1.0}] * n_trades
+    return {
+        "success": True,
+        "pnl": pnl,
+        "best_ct": 0.5,
+        "trades_by_ct": {0.5: trades},
+        "selected_features_long": ["f"],
+        "selected_features_short": [],
+    }
+
+
+def test_aggregation_enforces_min_fold_stability_on_every_path():
+    """2/5 profitable folds: early termination may never trigger (order F F P P F),
+    and the successive-halving path has none, so aggregation must reject."""
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.5, first_fold_sanity_check=False, separate_long_short=False
+    )
+    folds = [_fold_stub(p) for p in (-1.0, -1.0, 2.0, 2.0, -1.0)]
+
+    assert _aggregate_cv_folds(folds, 5, ctx, ["f"], [])["success"] is False
+    folds[-1] = _fold_stub(2.0)
+    assert _aggregate_cv_folds(folds, 5, ctx, ["f"], [])["success"] is True
+
+
+def test_aggregation_applies_the_first_fold_sanity_check():
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0, first_fold_sanity_check=True, separate_long_short=False
+    )
+    catastrophic = _fold_stub(-50.0, n_trades=10, win=False)
+    folds = [catastrophic, _fold_stub(5.0), _fold_stub(5.0)]
+
+    result = _aggregate_cv_folds(folds, 3, ctx, ["f"], [])
+
+    assert result["success"] is False and result["first_fold_failed"] is True
+
+
+def test_missing_best_ct_trade_key_does_not_count_as_no_trades():
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _first_fold_catastrophic
+
+    ctx = SimpleNamespace(
+        first_fold_sanity_check=True,
+        first_fold_min_win_rate=0.25,
+        first_fold_min_pnl=-10.0,
+        first_fold_min_trades=5,
+    )
+    fold_result = {
+        "best_ct": (0.2, 0.8),
+        "trades_by_ct": {0.2: [{"result": 1.0}]},
+        "pnl": 1.0,
+    }
+
+    assert _first_fold_catastrophic(fold_result, ctx) is False
+
+
+def _two_ct_fold(pnl_a, pnl_b, n_trades=10):
+    def trades(pnl):
+        return [
+            {"pnl_raw": pnl / n_trades, "result": 1.0 if pnl > 0 else -1.0}
+        ] * n_trades
+
+    best_ct, best_pnl = (0.5, pnl_a) if pnl_a >= pnl_b else (0.6, pnl_b)
+    return {
+        "success": True,
+        "pnl": best_pnl,
+        "best_ct": best_ct,
+        "trades_by_ct": {0.5: trades(pnl_a), 0.6: trades(pnl_b)},
+        "selected_features_long": ["f"],
+        "selected_features_short": [],
+    }
+
+
+def test_inner_score_does_not_pick_the_best_threshold_on_the_scored_fold():
+    """Noise: threshold a wins folds 0 and 2, b wins folds 1 and 3. The per-fold max
+    reads +5 per fold; a threshold chosen without the scored fold loses 5 on each."""
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0,
+        first_fold_sanity_check=False,
+        separate_long_short=False,
+        min_eval_trades=1,
+    )
+    folds = [_two_ct_fold(5.0, -5.0), _two_ct_fold(-5.0, 5.0)] * 2
+
+    result = _aggregate_cv_folds(folds, 4, ctx, ["f"], [])
+
+    assert result["avg_val_pnl_max_ct"] == pytest.approx(5.0)
+    assert result["inner_score_method"] == "cross_fitted_ct"
+    assert result["fold_pnls"] == [-5.0, -5.0, -5.0, -5.0]
+    assert result["avg_val_pnl"] == pytest.approx(-5.0)
+
+
+def test_inner_score_keeps_a_real_edge():
+    """A threshold that is best in every fold is also chosen on the other folds."""
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0,
+        first_fold_sanity_check=False,
+        separate_long_short=False,
+        min_eval_trades=1,
+    )
+    folds = [_two_ct_fold(4.0, -1.0) for _ in range(4)]
+
+    result = _aggregate_cv_folds(folds, 4, ctx, ["f"], [])
+
+    assert result["avg_val_pnl"] == pytest.approx(4.0)
+
+
+def test_inner_score_falls_back_and_says_so_without_a_threshold_choice():
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0,
+        first_fold_sanity_check=False,
+        separate_long_short=False,
+        min_eval_trades=1,
+    )
+    result = _aggregate_cv_folds([_fold_stub(2.0), _fold_stub(3.0)], 2, ctx, ["f"], [])
+
+    assert result["inner_score_method"] == "per_fold_best_ct"
+    assert result["avg_val_pnl"] == pytest.approx(2.5)
+
+
+class _SeedRecorder:
+    seen = []
+
+    def select_features(self, X, y, max_features=None, seed=None, **params):
+        type(self).seen.append(seed)
+        return list(X.columns), {}
+
+
+class _NoSeedSelector:
+    def select_features(self, X, y, max_features=None, **params):
+        assert "seed" not in params
+        return list(X.columns), {}
+
+
+def test_feature_selectors_get_a_deterministic_seed(monkeypatch):
+    """boruta/stability default to seed=None (global RNG): identical runs selected
+    different features. The caller now hands a seed to selectors that take one."""
+    import fwbg.optimization.nested_cv as nested_cv
+
+    _SeedRecorder.seen = []
+    monkeypatch.setattr(nested_cv, "get_feature_selector", lambda name: _SeedRecorder)
+    df = pd.DataFrame({"a": np.arange(40.0), "b": np.arange(40.0)[::-1]})
+    targets = np.array([0, 1] * 20)
+    plugins = [{"name": "x", "params": {}}, {"name": "y", "params": {"seed": 7}}]
+
+    nested_cv.select_features_from_fold(df, targets, ["a", "b"], 4, plugins)
+    nested_cv.select_features_from_fold(df, targets, ["a", "b"], 4, plugins, seed=99)
+
+    assert _SeedRecorder.seen == [42, 7, 99, 7]
+
+
+def test_a_selector_without_a_seed_parameter_is_not_given_one(monkeypatch):
+    import fwbg.optimization.nested_cv as nested_cv
+
+    monkeypatch.setattr(nested_cv, "get_feature_selector", lambda name: _NoSeedSelector)
+    df = pd.DataFrame({"a": np.arange(40.0), "b": np.arange(40.0)})
+    selected, _ = nested_cv.select_features_from_fold(
+        df, np.array([0, 1] * 20), ["a", "b"], 4, [{"name": "x", "params": {}}]
+    )
+    assert selected == ["a", "b"]
+
+
+def test_inner_cv_models_use_reduced_hyperparameters_and_outer_ones_do_not(monkeypatch):
+    """Documented, deliberate: inner CV halves xgboost n_estimators for speed, so the
+    outer fold/holdout model differs from the one the setting was selected with."""
+    from types import SimpleNamespace
+
+    import fwbg.optimization.nested_cv as nested_cv
+
+    seen = []
+
+    class Recorder:
+        @classmethod
+        def get_reduced_hyperparameters(cls, params):
+            return {**params, "n_estimators": max(10, params["n_estimators"] // 2)}
+
+        def train(self, X, y, context, **params):
+            seen.append(params["n_estimators"])
+
+    monkeypatch.setattr(nested_cv, "get_model", lambda name: Recorder)
+    ctx = SimpleNamespace(
+        model_type="x",
+        model_hyperparameters={"n_estimators": 200},
+        probability_calibration=False,
+        seed=None,
+    )
+    df = pd.DataFrame({"a": np.arange(40.0)})
+    targets = np.array([0, 1] * 20)
+
+    nested_cv.train_model(df, targets, ["a"], 4, ctx, use_reduced_params=True)
+    nested_cv.train_model(df, targets, ["a"], 4, ctx, use_reduced_params=False)
+
+    assert seen == [100, 200]

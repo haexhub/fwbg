@@ -3,7 +3,6 @@ Hauptprogramm für den Walk-Forward Optimizer
 """
 
 import os
-import glob
 import json
 import math
 import warnings
@@ -13,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 from tabulate import tabulate
+
 
 class _SafeJsonEncoder(json.JSONEncoder):
     """JSON encoder that handles inf/nan as null."""
@@ -37,11 +38,11 @@ class _SafeJsonEncoder(json.JSONEncoder):
         return obj
 
 
-from fwbg_sdk.enums import Timeframe  # noqa: E402
 from fwbg.statuses import EXECUTED_STATUSES  # noqa: E402
 from fwbg.data import config as data_config  # noqa: E402
 from fwbg.core.config import StrategyConfig  # noqa: E402
 from fwbg.optimization.holdout import symbol_worker  # noqa: E402
+from fwbg.optimization.run_files import select_run_files  # noqa: E402
 from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result  # noqa: E402
 from fwbg.results.storage import (  # noqa: E402
     generate_run_id,
@@ -84,7 +85,8 @@ def _ran_real_backtest(raw_results) -> bool:
     its holdout was looked at, the rule the research ledger counts by.
     """
     return any(
-        r and (
+        r
+        and (
             (r.get("holdout") or {}).get("evaluated") is True
             if "holdout" in r
             else r.get("status") in EXECUTED_STATUSES
@@ -122,103 +124,16 @@ def run_optimizer(
         strategy = StrategyConfig()
     if before_run is None and strategy.holdout_cutoff:
         # Ungated, the look would go unrecorded and later pass for development data.
-        print("Error: holdout_cutoff is set by the research gate (--holdout), "
-              "not by the strategy; refusing an ungated holdout look.")
+        print(
+            "Error: holdout_cutoff is set by the research gate (--holdout), "
+            "not by the strategy; refusing an ungated holdout look."
+        )
         return None
 
-    # Datasource aus Strategy übernehmen (via Data-Source-Registry)
-    if strategy.datasource:
-        from fwbg.core.data_sources import get_data_source, CSVSourceConfig
-        try:
-            ds = get_data_source(strategy.datasource)
-            if isinstance(ds, CSVSourceConfig) and ds.exists():
-                data_config.DATA_PATH = str(ds.path)
-        except ValueError:
-            print(f"Warnung: Datasource '{strategy.datasource}' nicht gefunden")
-
-    # CLI --data-path hat höchste Priorität
-    cli_data_path = (strategy_metadata or {}).get("_cli_data_path")
-    if cli_data_path:
-        data_config.DATA_PATH = cli_data_path
-
-    # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
-    if strategy.timeframe:
-        # Auf die kanonische Langform normalisieren (HOUR_1, DAY_1, …), damit
-        # Config-Lookup, Datei-Globbing und die Worker denselben String sehen.
-        # Eine unbekannte Bezeichnung soll laut scheitern statt still auf HOUR
-        # zurückzufallen (der frühere Fallback ließ DAY_1 mit oos_size=4000 laufen
-        # → 49500 Balken nötig → jeder Run brach als insufficient_data ab).
-        tf = Timeframe.from_str(strategy.timeframe).canonical
-        # CRITICAL: also set the env var, not just the module globals. Optimizer
-        # workers run in a ProcessPoolExecutor; on Python 3.14 the default start
-        # method is "forkserver" (not "fork"), so workers re-import data_config
-        # fresh and would otherwise fall back to the HOUR defaults — inflating
-        # test_period_years ~4x and halving the annualized Sharpe on M15. The
-        # re-import reads TIMEFRAME from the environment, so propagate it there.
-        os.environ["TIMEFRAME"] = tf
-        data_config.TIMEFRAME = tf
-        tf_cfg = data_config.resolve_tf_config(tf)
-        data_config.tf_cfg = tf_cfg
-        data_config.OOS_SIZE = tf_cfg["oos_size"]
-        data_config.WINDOW_SIZE = tf_cfg["window_size"]
-
-    # Prüfe ob DATA_PATH gesetzt ist
-    if not data_config.DATA_PATH:
-        print("Fehler: Kein Datenpfad konfiguriert!")
-        print("Bitte 'datasource' in der Strategy setzen oder --data-path übergeben.")
+    files = select_run_files(strategy, strategy_metadata, asset_filter)
+    if files is None:
         return None
-
-    # Lade nur Dateien für das gewählte Timeframe
-    files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
-
-    # Fallback: resample from a lower timeframe if no files found
-    if not files:
-        from fwbg.data.resample import find_fallback_files
-        files, source_tf = find_fallback_files(data_config.DATA_PATH, data_config.TIMEFRAME)
-        if files:
-            data_config.RESAMPLE_FROM = source_tf
-            print(f"No {data_config.TIMEFRAME} files found — will resample from {source_tf}")
-
-    # Strategy-Metadaten auswerten für Filter
-    if strategy_metadata:
-        # Assets aus Strategy
-        strat_assets = strategy_metadata.get("assets", {})
-        if strat_assets:
-            # Filter: nur diese Assets
-            if strat_assets.get("filter"):
-                asset_filter = asset_filter or []
-                asset_filter.extend(strat_assets["filter"])
-            # Exclude: diese Assets ausschließen
-            if strat_assets.get("exclude"):
-                exclude_assets = strat_assets["exclude"]
-                files = [f for f in files if not any(a in f for a in exclude_assets)]
-            # Classes: nur bestimmte Asset-Klassen
-            if strat_assets.get("classes"):
-                from fwbg.data.assets import AssetRegistry
-                ASSET_CONFIG = AssetRegistry.DEFAULT_ASSETS
-
-                allowed_classes = strat_assets["classes"]
-                files = [
-                    f
-                    for f in files
-                    if any(
-                        ASSET_CONFIG.get(os.path.basename(f).split("_")[0], {}).get(
-                            "class"
-                        )
-                        in allowed_classes
-                        for _ in [1]
-                    )
-                ]
-
     max_concurrent_assets = strategy.resources.max_concurrent_assets
-
-    # Filter nach bestimmten Assets wenn angegeben
-    if asset_filter:
-        files = [f for f in files if any(a in f for a in asset_filter)]
-    if not files:
-        print(f"Keine Dateien für Timeframe {data_config.TIMEFRAME} gefunden!")
-        print(f"Verfügbare Dateien: {glob.glob(f'{data_config.DATA_PATH}/*.csv')[:5]}...")
-        return None
 
     # Research gate: needs the concrete symbols and runs before anything is written.
     if before_run is not None:
@@ -241,14 +156,20 @@ def run_optimizer(
     print(f"\nFWBG Strategy Backtester 2.0 | Timeframe: {data_config.TIMEFRAME}")
     if description:
         print(f"Description: {description}")
-    print(f"Walk-Forward Folds: {data_config.WALK_FORWARD_FOLDS}, OOS Size: {data_config.OOS_SIZE}")
+    print(
+        f"Walk-Forward Folds: {data_config.WALK_FORWARD_FOLDS}, OOS Size: {data_config.OOS_SIZE}"
+    )
     print(f"Korrelations-Threshold: {data_config.CORR_THRESHOLD}")
     print("-" * 60)
 
     # Ressourcen-Info anzeigen
     res_info = get_resource_info()
-    print(f"System: {res_info['cpu_cores']} Cores, {res_info['ram_total_gb']:.1f} GB RAM")
-    print(f"Verfügbar: {res_info['ram_available_gb']:.1f} GB ({res_info['ram_free_percent']:.0f}% frei)")
+    print(
+        f"System: {res_info['cpu_cores']} Cores, {res_info['ram_total_gb']:.1f} GB RAM"
+    )
+    print(
+        f"Verfügbar: {res_info['ram_available_gb']:.1f} GB ({res_info['ram_free_percent']:.0f}% frei)"
+    )
     print("-" * 60)
 
     # Log-Level anzeigen
@@ -279,8 +200,11 @@ def run_optimizer(
     # Progress-Tracker im Hauptprozess mit Queue für Worker-Updates
     run_dir_path = Path(run_path) if run_path else None
     progress_tracker = ProgressTracker(
-        len(files), asset_names, queue=progress_queue,
-        run_directory=run_dir_path, run_id=run_id,
+        len(files),
+        asset_names,
+        queue=progress_queue,
+        run_directory=run_dir_path,
+        run_id=run_id,
         strategy_name=strategy.name,
     )
 
@@ -309,10 +233,16 @@ def run_optimizer(
         rrr_val = result.get("rrr", 0)
         tp = cfg.get("tp_mult", "?")
         sl = cfg.get("sl_mult", "?")
-        n_trades = result.get("walk_forward", {}).get("total_trades", len(result.get("tr_trace", [])))
+        n_trades = result.get("walk_forward", {}).get(
+            "total_trades", len(result.get("tr_trace", []))
+        )
 
         wf = result.get("walk_forward", {})
-        fold_tag = f" [Fold {wf.get('best_fold_id', '?')}]" if wf.get("config_inconsistent") else ""
+        fold_tag = (
+            f" [Fold {wf.get('best_fold_id', '?')}]"
+            if wf.get("config_inconsistent")
+            else ""
+        )
 
         if status == "ok":
             sharpe = result.get("sharpe", 0)
@@ -434,13 +364,19 @@ def run_optimizer(
                 _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
                 _final_eq = _eq_result["final_equity"]
                 _max_dd = _eq_result["max_drawdown"]
-                _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
+                _annual_return = (
+                    ((_final_eq / 100.0) ** (1 / _years) - 1) * 100
+                    if _final_eq > 0 and _years > 0
+                    else -100
+                )
 
             _wins = [p for p in _trades if p > 0]
             _losses = [abs(p) for p in _trades if p < 0]
             _gross_profit = sum(_wins)
             _gross_loss = sum(_losses)
-            _profit_factor = round(_gross_profit / _gross_loss, 2) if _gross_loss > 0 else 0
+            _profit_factor = (
+                round(_gross_profit / _gross_loss, 2) if _gross_loss > 0 else 0
+            )
             # FX pnl_raw is in price units (~1e-3); rounding to 2 dp collapsed
             # every avg to 0.0. Use 6 dp so the values survive.
             _avg_win = round(sum(_wins) / len(_wins), 6) if _wins else 0
@@ -454,8 +390,13 @@ def run_optimizer(
             _n_short = (_ta.get("short_stats") or {}).get("total", 0)
             if not _ta:
                 # A holdout look has no trade analytics; its trades carry their direction.
-                _directions = [t.get("direction") for t in result.get("trades_detailed") or []]
-                _n_long, _n_short = _directions.count("LONG"), _directions.count("SHORT")
+                _directions = [
+                    t.get("direction") for t in result.get("trades_detailed") or []
+                ]
+                _n_long, _n_short = (
+                    _directions.count("LONG"),
+                    _directions.count("SHORT"),
+                )
 
             unified_metrics = {
                 "pnl": round(sum(_trades), 4),
@@ -507,7 +448,9 @@ def run_optimizer(
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []
         # A holdout look that was not evaluated carries no config (optimization.holdout).
-        if status in ["ok", "no_edge", "not_significant"] and (result.get("config") or result.get("best_config")):
+        if status in ["ok", "no_edge", "not_significant"] and (
+            result.get("config") or result.get("best_config")
+        ):
             # Config extrahieren (entweder aus "config" oder "best_config")
             cfg = result.get("config") or result.get("best_config", {})
             tp = cfg.get("tp_mult", "?")
@@ -539,29 +482,41 @@ def run_optimizer(
             # Header
             status_symbol = "✓" if status == "ok" else "✗"
             status_text = "PROFITABLE" if status == "ok" else status.upper()
-            output_lines.append(f"\n{'='*60}")
+            output_lines.append(f"\n{'=' * 60}")
             output_lines.append(f"{status_symbol} {sym} - {status_text}")
-            output_lines.append(f"{'='*60}")
+            output_lines.append(f"{'=' * 60}")
 
             # Details
             output_lines.append(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
-            output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
+            output_lines.append(
+                f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}"
+            )
             sharpe_text = "n/a" if sharpe is None else f"{sharpe:.2f}"
-            output_lines.append(f"  Performance: Sharpe={sharpe_text}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
+            output_lines.append(
+                f"  Performance: Sharpe={sharpe_text}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)"
+            )
             mean_bias_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"
-            output_lines.append(f"  Bias: Mean={mean_bias_text}, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
+            output_lines.append(
+                f"  Bias: Mean={mean_bias_text}, Ratios={[f'{r:.2f}' for r in bias_ratios]}"
+            )
 
             # Status-spezifische Zeilen
             if status == "ok":
-                output_lines.append(f"  Risk/Trade={risk_per_trade:.4f}, p={p_value:.3f}")
+                output_lines.append(
+                    f"  Risk/Trade={risk_per_trade:.4f}, p={p_value:.3f}"
+                )
             elif status == "no_edge":
                 output_lines.append("  Reason: No profitable edge")
             elif status == "not_significant":
-                output_lines.append(f"  Reason: p-value={p_value:.3f} (not significant)")
+                output_lines.append(
+                    f"  Reason: p-value={p_value:.3f} (not significant)"
+                )
 
             if wf.get("config_inconsistent"):
                 fold_id = wf.get("best_fold_id", "?")
-                output_lines.append(f"  ⚠ Fold configs INCONSISTENT - using best fold {fold_id} only")
+                output_lines.append(
+                    f"  ⚠ Fold configs INCONSISTENT - using best fold {fold_id} only"
+                )
 
             # Plot im Asset-Verzeichnis speichern
             if result.get("tr_trace") and run_path:
@@ -573,23 +528,29 @@ def run_optimizer(
 
         elif status == "no_successful_folds":
             grid_count = len(result.get("grid_results", []))
-            output_lines.append(f"\n{'='*60}")
+            output_lines.append(f"\n{'=' * 60}")
             output_lines.append(f"✗ {sym} - NO_SUCCESSFUL_FOLDS")
-            output_lines.append(f"{'='*60}")
-            output_lines.append(f"  {grid_count} Kombinationen getestet, kein Fold mit genug Test-Trades")
+            output_lines.append(f"{'=' * 60}")
+            output_lines.append(
+                f"  {grid_count} Kombinationen getestet, kein Fold mit genug Test-Trades"
+            )
 
             best_grid = result.get("best_grid_result")
             if best_grid:
-                output_lines.append(f"  Best Grid: TP={best_grid.get('tp_mult', '?')}, "
-                                    f"SL={best_grid.get('sl_mult', '?')}, "
-                                    f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
-                                    f"Inner PnL={best_grid.get('inner_val_pnl', 0):.1f}, "
-                                    f"Stability={best_grid.get('fold_stability', 0):.0%}")
+                output_lines.append(
+                    f"  Best Grid: TP={best_grid.get('tp_mult', '?')}, "
+                    f"SL={best_grid.get('sl_mult', '?')}, "
+                    f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
+                    f"Inner PnL={best_grid.get('inner_val_pnl', 0):.1f}, "
+                    f"Stability={best_grid.get('fold_stability', 0):.0%}"
+                )
 
         else:
             # Andere Status (insufficient_data, etc.)
             grid_count = len(result.get("grid_results", []))
-            output_lines.append(f"\n✗ {sym} - {status} ({grid_count} Kombinationen getestet)")
+            output_lines.append(
+                f"\n✗ {sym} - {status} ({grid_count} Kombinationen getestet)"
+            )
 
         # In Buffer speichern für Ausgabe nach Progress-UI-Stop
         result_output_buffer.append("\n".join(output_lines))
@@ -605,7 +566,7 @@ def run_optimizer(
             func=worker_func,
             items=files,
             progress_callback=update_progress,
-            result_callback=on_result_ready
+            result_callback=on_result_ready,
         )
     finally:
         progress_tracker.stop()
@@ -704,7 +665,9 @@ def run_optimizer(
 
         # Elite-Plot im Asset-Verzeichnis speichern
         if sym_dir and os.path.isdir(sym_dir):
-            plot_stats = create_asset_plot(e, sym_dir, trade_directions=trade_directions, unified_metrics=um)
+            plot_stats = create_asset_plot(
+                e, sym_dir, trade_directions=trade_directions, unified_metrics=um
+            )
             if plot_stats:
                 n_long, n_short, _, _ = plot_stats
             else:
@@ -827,6 +790,62 @@ def run_optimizer(
     }
 
 
+def _session_bars_command(args) -> None:
+    """``fwbg data session-bars``: daily bars of one session into a CSV datasource."""
+    from pathlib import Path
+
+    from fwbg.core.data_sources import get_data_root
+    from fwbg.data.loader import load_data_aligned
+    from fwbg.data.resample import parse_symbol_timeframe
+    from fwbg.data.session_bars import build_session_bars, write_session_bars
+    from fwbg.data.trading_hours import asset_sessions
+    from fwbg.data.validation import DataCheckError
+    from fwbg_sdk.enums import Timeframe
+
+    source = Path(args.input).expanduser()
+    parsed = parse_symbol_timeframe(source.stem)
+    if parsed is None:
+        raise SystemExit(f"{source.name}: expected a name like SYMBOL_MINUTE_15.csv")
+    symbol = args.symbol or parsed[0]
+    hours = asset_sessions(symbol).get(args.session)
+    if hours is None:
+        known = ", ".join(asset_sessions(symbol)) or "none"
+        raise SystemExit(
+            f"{symbol}: no '{args.session}' session in the trading hours (known: {known})"
+        )
+    try:
+        df = load_data_aligned(str(source))
+    except (ValueError, IndexError, OSError) as exc:
+        raise SystemExit(f"{source.name}: unreadable or invalid data: {exc}") from exc
+    if df is None:
+        raise SystemExit(f"{source}: could not be loaded")
+    try:
+        built = build_session_bars(
+            df,
+            symbol=symbol,
+            hours=hours,
+            bar_minutes=Timeframe.from_str(parsed[1]).minutes,
+        )
+    except (DataCheckError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    out_dir = get_data_root() / args.datasource / "datasource"
+    try:
+        csv = write_session_bars(
+            built,
+            out_dir=out_dir,
+            symbol=symbol,
+            session=args.session,
+            source=source,
+            hours=hours,
+        )
+    except OSError as exc:
+        raise SystemExit(f"{out_dir}: cannot write session bars: {exc}") from exc
+    print(
+        f"{csv}: {len(built.bars)} {args.session} bars from {built.sessions} sessions "
+        f"({built.incomplete} incomplete dropped)"
+    )
+
+
 def _run_data_command(argv):
     """Führt Daten-ETL-Kommandos aus (fwbg data <subcommand>)."""
     data_parser = argparse.ArgumentParser(
@@ -835,14 +854,46 @@ def _run_data_command(argv):
     )
     subparsers = data_parser.add_subparsers(dest="subcmd")
 
-    prep_parser = subparsers.add_parser("prepare", help="Rohdaten in Standard-Format konvertieren")
-    prep_parser.add_argument("--source", required=True, help="Name der Datenquelle (z.B. dukascopy)")
+    prep_parser = subparsers.add_parser(
+        "prepare", help="Rohdaten in Standard-Format konvertieren"
+    )
+    prep_parser.add_argument(
+        "--source", required=True, help="Name der Datenquelle (z.B. dukascopy)"
+    )
 
-    _list_parser = subparsers.add_parser("list", help="Registrierte Datenquellen anzeigen")
+    _list_parser = subparsers.add_parser(
+        "list", help="Registrierte Datenquellen anzeigen"
+    )
+
+    sb_parser = subparsers.add_parser(
+        "session-bars",
+        help="Tagesbars einer Handelssession aus Intraday-Bars bauen (docs/data-checks.md)",
+    )
+    sb_parser.add_argument(
+        "--input", required=True, help="Intraday-CSV, z.B. .../NAS100_MINUTE_15.csv"
+    )
+    sb_parser.add_argument("--symbol", help="Symbol (Default: aus dem Dateinamen)")
+    sb_parser.add_argument(
+        "--session",
+        default="cash",
+        help="Session-Name aus den Handelszeiten (Default: cash)",
+    )
+    sb_parser.add_argument(
+        "--datasource", required=True, help="Ziel-Datenquelle, z.B. dukascopy_cash"
+    )
 
     args = data_parser.parse_args(argv)
 
-    from fwbg.core.data_sources import get_data_source, discover_sources, _DATA_SOURCES, CSVSourceConfig
+    if args.subcmd == "session-bars":
+        _session_bars_command(args)
+        return
+
+    from fwbg.core.data_sources import (
+        get_data_source,
+        discover_sources,
+        _DATA_SOURCES,
+        CSVSourceConfig,
+    )
 
     if not _DATA_SOURCES:
         discover_sources()
@@ -859,7 +910,9 @@ def _run_data_command(argv):
             return
 
         if source.raw_path is None:
-            print(f"Fehler: Datenquelle '{args.source}' hat keinen raw_path konfiguriert")
+            print(
+                f"Fehler: Datenquelle '{args.source}' hat keinen raw_path konfiguriert"
+            )
             return
 
         print(f"Konvertiere {args.source}: {source.raw_path} → {source.path}")
@@ -882,12 +935,19 @@ def main():
     """CLI-Einstiegspunkt mit Argument-Parsing."""
     import sys
     import faulthandler
+
     faulthandler.enable()  # Dump Python traceback on SIGSEGV/SIGABRT (C-level crashes)
 
     if len(sys.argv) > 1 and sys.argv[1] == "portfolio":
         from fwbg.portfolio.cli import main as portfolio_main
 
         portfolio_main(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "combine":
+        from fwbg.cli.combine import main as combine_main
+
+        combine_main(sys.argv[2:])
         return
 
     if len(sys.argv) > 1 and sys.argv[1] == "research":
@@ -903,16 +963,22 @@ def main():
     # Handle 'api' subcommand
     if len(sys.argv) > 1 and sys.argv[1] == "api":
         api_parser = argparse.ArgumentParser(description="FWBG API Server")
-        api_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
-        api_parser.add_argument("--port", type=int, default=8420, help="Port (default: 8420)")
+        api_parser.add_argument(
+            "--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
+        )
+        api_parser.add_argument(
+            "--port", type=int, default=8420, help="Port (default: 8420)"
+        )
         api_args = api_parser.parse_args(sys.argv[2:])
         from fwbg.api import run_server
+
         run_server(host=api_args.host, port=api_args.port)
         return
 
     # Handle 'analyze' subcommand
     if len(sys.argv) > 1 and sys.argv[1] == "analyze":
         from fwbg.cli._analyze import run_analyze
+
         run_analyze(sys.argv[2:])
         return
 
@@ -937,29 +1003,90 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         """,
     )
 
-    parser.add_argument("-d", "--description", type=str, help="Beschreibung für diesen Run")
-    parser.add_argument("--strategy", action="store_true", help="Interaktive Strategie-Metadaten-Eingabe")
-    parser.add_argument("--strategy-file", type=str, metavar="FILE", help="Strategie-Metadaten aus JSON-Datei laden")
-    parser.add_argument("--list", action="store_true", help="Alle vorhandenen Runs anzeigen")
-    parser.add_argument("--tags", type=str, help="Runs nach Tags filtern und auflisten (komma-getrennt)")
-    parser.add_argument("--compare", nargs="+", metavar="RUN_ID", help="Runs vergleichen")
-    parser.add_argument("--no-save", action="store_true", help="Ergebnisse nicht in test_results speichern")
-    parser.add_argument("--load", type=str, metavar="RUN_ID", help="Details eines Runs anzeigen")
-    parser.add_argument("--assets", type=str, help="Nur bestimmte Assets testen (komma-getrennt)")
-    parser.add_argument("--asset-classes", type=str, help="Nur bestimmte Asset-Klassen testen (komma-getrennt)")
-    parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien umgekehrt")
-    parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien (default: 10)")
-    parser.add_argument("--timeframe", type=str, help="Timeframe (überschreibt TIMEFRAME env)")
-    parser.add_argument("--data-path", type=str, metavar="DIR",
-                        help="Datenpfad (überschreibt DATA_PATH, z.B. data/dukascopy/datasource)")
-    parser.add_argument("--run-id", type=str, metavar="ID",
-                        help="Feste Run-ID verwenden (statt automatisch generierter ID)")
-    parser.add_argument("--start-date", type=str, metavar="ISO",
-                        help="Backtest-Fenster Start (ISO, überschreibt Strategy-start_date)")
-    parser.add_argument("--end-date", type=str, metavar="ISO",
-                        help="Backtest-Fenster Ende (ISO, überschreibt Strategy-end_date)")
-    parser.add_argument("--cost-multiplier", type=float, metavar="X",
-                        help="Spread/Slippage-Multiplikator (z.B. 2.0 für Kosten-Stresstest)")
+    parser.add_argument(
+        "-d", "--description", type=str, help="Beschreibung für diesen Run"
+    )
+    parser.add_argument(
+        "--strategy",
+        action="store_true",
+        help="Interaktive Strategie-Metadaten-Eingabe",
+    )
+    parser.add_argument(
+        "--strategy-file",
+        type=str,
+        metavar="FILE",
+        help="Strategie-Metadaten aus JSON-Datei laden",
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="Alle vorhandenen Runs anzeigen"
+    )
+    parser.add_argument(
+        "--tags", type=str, help="Runs nach Tags filtern und auflisten (komma-getrennt)"
+    )
+    parser.add_argument(
+        "--compare", nargs="+", metavar="RUN_ID", help="Runs vergleichen"
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Ergebnisse nicht in test_results speichern",
+    )
+    parser.add_argument(
+        "--load", type=str, metavar="RUN_ID", help="Details eines Runs anzeigen"
+    )
+    parser.add_argument(
+        "--assets", type=str, help="Nur bestimmte Assets testen (komma-getrennt)"
+    )
+    parser.add_argument(
+        "--asset-classes",
+        type=str,
+        help="Nur bestimmte Asset-Klassen testen (komma-getrennt)",
+    )
+    parser.add_argument(
+        "--reverse-worst",
+        type=str,
+        metavar="RUN_ID",
+        help="Analysiere schlechteste Strategien umgekehrt",
+    )
+    parser.add_argument(
+        "--reverse-n",
+        type=int,
+        default=10,
+        help="Anzahl der schlechtesten Strategien (default: 10)",
+    )
+    parser.add_argument(
+        "--timeframe", type=str, help="Timeframe (überschreibt TIMEFRAME env)"
+    )
+    parser.add_argument(
+        "--data-path",
+        type=str,
+        metavar="DIR",
+        help="Datenpfad (überschreibt DATA_PATH, z.B. data/dukascopy/datasource)",
+    )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        metavar="ID",
+        help="Feste Run-ID verwenden (statt automatisch generierter ID)",
+    )
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        metavar="ISO",
+        help="Backtest-Fenster Start (ISO, überschreibt Strategy-start_date)",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=str,
+        metavar="ISO",
+        help="Backtest-Fenster Ende (ISO, überschreibt Strategy-end_date)",
+    )
+    parser.add_argument(
+        "--cost-multiplier",
+        type=float,
+        metavar="X",
+        help="Spread/Slippage-Multiplikator (z.B. 2.0 für Kosten-Stresstest)",
+    )
     add_run_arguments(parser)
 
     args = parser.parse_args()
@@ -1004,7 +1131,9 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             strategy_metadata["end_date"] = args.end_date
         if args.cost_multiplier is not None:
             if args.cost_multiplier <= 0:
-                parser.error(f"--cost-multiplier muss > 0 sein, war {args.cost_multiplier}")
+                parser.error(
+                    f"--cost-multiplier muss > 0 sein, war {args.cost_multiplier}"
+                )
             strategy_metadata["cost_multiplier"] = args.cost_multiplier
 
         # CLI --data-path hat höchste Priorität → wird in strategy_metadata injiziert
@@ -1022,6 +1151,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         # Expand asset classes to individual assets
         if args.asset_classes:
             from fwbg.data.assets import AssetRegistry
+
             registry = AssetRegistry()
             classes = [c.strip().upper() for c in args.asset_classes.split(",")]
             class_assets = []
@@ -1033,17 +1163,23 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 asset_filter = class_assets
             if not asset_filter:
                 print(f"Keine Assets für Klassen {classes} gefunden!")
-                return
+                sys.exit(1)
 
         research = None
         run_id = args.run_id or generate_run_id(args.description)
         if gate_enabled():
             if args.no_save:
-                parser.error("--no-save runs cannot be recorded in the research register")
+                parser.error(
+                    "--no-save runs cannot be recorded in the research register"
+                )
             if (args.strategy_file or args.strategy) and not strategy_metadata_loaded:
-                sys.exit(1)  # loading failed or the prompt was aborted; never a default-config trial
+                sys.exit(
+                    1
+                )  # loading failed or the prompt was aborted; never a default-config trial
             try:
-                strategy_metadata = prepare_metadata(strategy_metadata, data_config.TIMEFRAME)
+                strategy_metadata = prepare_metadata(
+                    strategy_metadata, data_config.TIMEFRAME
+                )
             except (OSError, ValueError) as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 sys.exit(1)
@@ -1061,9 +1197,13 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             if args.holdout:
                 parser.error(f"--holdout needs the research gate ({GATE_ENV} is off)")
             if args.check or args.check_json:
-                parser.error(f"--check/--check-json needs the research gate ({GATE_ENV} is off)")
-            print(f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
-                  file=sys.stderr)
+                parser.error(
+                    f"--check/--check-json needs the research gate ({GATE_ENV} is off)"
+                )
+            print(
+                f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
+                file=sys.stderr,
+            )
 
         def start(before_run=None):
             return run_optimizer(
@@ -1076,7 +1216,9 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             )
 
         result = (
-            start() if research is None else run_gated(research, start, as_json=args.check_json)
+            start()
+            if research is None
+            else run_gated(research, start, as_json=args.check_json)
         )
         if result is None:
             sys.exit(1)

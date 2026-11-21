@@ -1,6 +1,6 @@
 # Plugin Spec — sma
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -37,6 +37,7 @@ SMA indicator built on BaseMovingAverageIndicator. For each configured line (per
 
 ## Edge Cases
 
+- Crossing features are NaN until both averages of the pair are valid (not 0.0). Lines with the same period and source are computed once.
 - Period longer than the input series — leading rows for that line's SMA are NaN (ta.trend.sma_indicator behavior).
 - Only one line configured — crossings=True yields no crossing features because no pairs exist.
 - Line entry omits 'source' — defaults to 'C' (close) per the param schema.

@@ -1,6 +1,6 @@
 # Plugin Spec — previous_day_levels
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -20,8 +20,9 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - `ma_period` (int, default=20): Rolling window for position moving average.
 - `enable_retest` (bool, default=True): Enable PDH/PDL retest signals at the configured retracement level(s).
 - `retracement_levels` (list[float], default=0.5): Retracement fraction(s) of the PDH-PDL range used as retest entry level; scalar or list. Always produces rl{N}_ prefixed columns.
-- `session_start_hour` (int, default=7): UTC hour when trading session starts.
-- `session_end_hour` (int, default=21): UTC hour when trading session ends (wraps around midnight when start >= end).
+- `session_start_hour` (int, default=7): Hour when the trading session starts, on the index clock (UTC) or, with `session_timezone`, on that zone's wall clock.
+- `session_end_hour` (int, default=21): Hour when the trading session ends, same clock as `session_start_hour` (wraps around midnight when start >= end).
+- `session_timezone` (string, default=None): IANA timezone (e.g. `America/New_York`) in which the session hours and the trading-day boundary are given. Day grouping and the session mask are then evaluated on that zone's wall clock and follow daylight saving time; a naive index is read as UTC. `None` keeps the index-clock behaviour. Cannot be combined with `resample_tf` (raises ValueError).
 - `candle_span` (choice, default='hl'): Vertical extent of candles used for range: 'hl' (full H/L including wicks) or 'body' (max/min of O/C).
 - `range_scope` (list[string], default=['session']): Which bars are included in range computation: 'session' (session hours only, ses_ prefix) or 'all' (24h, all_ prefix). List to precompute multiple.
 - `break_modes` (list[string], default=['all_hours']): Break-detection timing modes: 'all_hours' (24/7, no prefix) or 'session_only' (sesbrk_ prefix, only session bars trigger).
@@ -59,22 +60,22 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - AC-003: Raises ValueError when range_scope contains a value outside {'session','all'}.
 - AC-004: For each (candle_span, range_scope, break_mode) variant, emits the 13 base pdl_* feature columns prefixed with <span>_<scope>_<break_pfx>.
 - AC-005: For each retracement level in retracement_levels and each retest_mode, emits pdl_retest_bull, pdl_retest_bear (when enable_retest=True) and pdl_sl_dist columns prefixed with <span>_<scope>_<break_pfx><retest_pfx>rl{N}_.
-- AC-006: pdl_high_dist = (PDH - close) / ATR and pdl_low_dist = (close - PDL) / ATR, using a safe ATR floor of 1.0 where ATR <= EPSILON.
+- AC-006: pdl_high_dist = (PDH - close) / ATR and pdl_low_dist = (close - PDL) / ATR, using a safe ATR floor of 1.0 where ATR <= EPSILON. ATR is the rolling mean of true range over a full atr_period window; rows before that are NaN (no fabricated value).
 - AC-007: pdl_position = (close - PDL) / (PDH - PDL) with NaN where |PDH - PDL| <= EPSILON.
 - AC-008: pdl_above_high and pdl_below_low are 0/1 floats indicating close strictly above PDH or below PDL.
 - AC-009: pdl_midpoint_dist normalizes distance from close to (PDH+PDL)/2 by ATR.
 - AC-010: pdl_high_break / pdl_low_break mark the first bar of each day where the breakout condition holds (with optional session mask when break_mode='session_only').
 - AC-011: pdl_post_bull / pdl_post_bear stay set for all bars after the first break within the day.
 - AC-012: pdl_sl_dist = max((1 - rl) * pd_range, min_sl_atr_mult * ATR) when min_sl_atr_mult > 0, else (1 - rl) * pd_range.
-- AC-013: pdl_range_position_ma is a rolling mean of pdl_position over ma_period bars with min_periods=1.
-- AC-014: pdl_day_range_expanding is 1.0 when the current-day range (per candle_span/scope) exceeds the previous-day range.
+- AC-013: pdl_range_position_ma is a rolling mean of pdl_position over ma_period bars (min_periods=ma_period, NaN until full).
+- AC-014: pdl_day_range_expanding is 1.0 when the range of the current day *so far* (running max/min of the bars up to the current bar, per candle_span/scope) exceeds the previous-day range.
 - AC-015: All feature values are NaN on bars where the previous day's H/L is unavailable (e.g. first day, or after weekend when skip_weekends=True and prior data is missing).
 - AC-016: When skip_weekends=True, Saturday/Sunday PDH/PDL are forward-filled from the last trading day (so Monday references Friday).
 - AC-017: When resample_tf is set, breakout detection is anchored at the last bar of each resampled period (end-of-bar timestamp) to avoid intra-period lookahead.
 - AC-018: When resample_tf is set and candle_span='body', the PDH/PDL range is computed from resampled O/C rather than native bars.
 - AC-019: Breakout thresholds combine multiplicatively and absolutely via offset = max(breakout_threshold * range, breakout_threshold_abs).
 - AC-020: Features are shifted by one bar via shift_features before being concatenated into the returned DataFrame (no lookahead).
-- AC-021: get_feature_columns and get_signal_columns return the exact set of columns produced by compute for the given params (via _default_fallback_columns when not yet computed).
+- AC-021: get_feature_columns returns the exact set of columns produced by compute for the given params (via _default_fallback_columns when not yet computed); get_signal_columns returns an empty list (every column is shifted).
 
 ## Edge Cases
 
@@ -82,7 +83,11 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - First day(s) of data have no previous-day reference: all pdl_* features are NaN on those bars.
 - Session that wraps midnight (session_start_hour >= session_end_hour): day grouping uses a (24 - session_start_hour) offset so the trading day aligns to session start.
 - skip_weekends=True with Monday bars: PDH/PDL are taken from Friday via ffill of trading days only.
-- ATR <= EPSILON: safe_atr falls back to 1.0 to avoid division blow-up in distance features.
+- ATR <= EPSILON: safe_atr falls back to 1.0 to avoid division blow-up in distance features; during ATR warm-up safe_atr stays NaN.
+- A retest never fires on the breakout bar itself (and min_retracement tracking starts after it): the first eligible retest bar is the bar after the break.
+- Without `session_timezone`, session_start_hour / session_end_hour are fixed index-clock (UTC) hours with no time zone conversion; a 17:00 New York day boundary is 22:00 UTC in winter and 21:00 UTC in summer. With `session_timezone="America/New_York"` and `session_start_hour=17` the day rolls over at 17:00 New York time all year (22:00 UTC in winter, 21:00 UTC in summer). An unknown timezone raises ValueError.
+- resample_tf with body range: in session scope only in-session bars enter a resample bin, and bins are aligned to the trading-day boundary (midnight, or session_start_hour for sessions crossing midnight).
+- enable_retest=False: get_feature_columns() omits the retest columns, matching what compute() emits.
 - |PDH - PDL| <= EPSILON: pdl_position is NaN for those bars (safe_range = NaN).
 - range_scope contains an unknown value: raises ValueError listing invalid entries.
 - Multiple retracement_levels supplied: each generates its own rl{N}_-prefixed retest/SL columns.
@@ -96,7 +101,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 ## Assumptions
 
 - df is an intraday OHLC frame with columns O, H, L, C and a DatetimeIndex (verified for datetime index; OHLC columns assumed present).
-- Session hours are interpreted in the timezone of df.index (typically UTC per param docs).
+- Without `session_timezone`, session hours are interpreted on the clock of df.index (typically UTC); with it, in that zone.
 - shift_features shifts by one bar to enforce the no-lookahead invariant required for indicators.
 - compute_break_state, compute_retest_signals, apply_breakout_threshold, EPSILON, and rl_tag are provided by fwbg_sdk / fwbg_sdk.retest and behave as their names suggest.
 

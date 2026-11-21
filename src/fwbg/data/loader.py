@@ -2,12 +2,14 @@
 Daten laden und Makro-Indikatoren integrieren
 """
 
+import logging
 import os
 import pandas as pd
 import numpy as np
 
-from .config import TARGET_TZ
 from .macro_contract import RELEASE_COL, merge_respect_release
+
+log = logging.getLogger(__name__)
 
 
 def _has_header(path):
@@ -61,6 +63,7 @@ def _parse_timestamp_col(series):
     - ISO-Datetime-Strings ("2024-01-01 09:00:00")
     - Unix-Millisekunden (z.B. 1388534400000 — > 1e12)
     - Unix-Sekunden (z.B. 1388534400 — > 1e9)
+    - Strings mit UTC-Offset ("2024-07-01 10:00:00+02:00"), auch gemischt
     """
     sample = series.iloc[0]
     try:
@@ -71,15 +74,60 @@ def _parse_timestamp_col(series):
             return pd.to_datetime(series, unit="s")
     except (ValueError, TypeError):
         pass
-    return pd.to_datetime(series)
+    try:
+        return pd.to_datetime(series)
+    except ValueError as exc:
+        if "Mixed timezones" not in str(exc):
+            raise
+        # Offsets that differ within one column (a DST change): one common zone.
+        return pd.to_datetime(series, utc=True)
 
 
-def load_data_aligned(path, is_sentiment=False):
-    """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment."""
+def apply_date_window(
+    df: pd.DataFrame, start_date: str | None, end_date: str | None
+) -> pd.DataFrame:
+    """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
+
+    `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
+    and holdout windows that share a boundary date from overlapping. Either
+    bound may be omitted. Raises `ValueError` naming the bad value if a date
+    string cannot be parsed.
+    """
+    start = None
+    end = None
+    if start_date is not None:
+        try:
+            start = pd.Timestamp(start_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid start_date {start_date!r}: {exc}") from exc
+    if end_date is not None:
+        try:
+            end = pd.Timestamp(end_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid end_date {end_date!r}: {exc}") from exc
+
+    if start is not None and end is not None:
+        return df.loc[(df.index >= start) & (df.index < end)]
+    if start is not None:
+        return df.loc[df.index >= start]
+    if end is None:
+        return df
+    return df.loc[df.index < end]
+
+
+def load_data_aligned(path: str) -> pd.DataFrame | None:
+    """Lädt OHLC-Daten aus CSV; der Index ist naive UTC.
+
+    Returns None only for a missing or empty file; unreadable or invalid data
+    (parse errors, non-numeric or non-positive OHLC) raises.
+    """
     try:
         # Prüfe ob Header vorhanden
         has_header = _has_header(path)
         df_raw = pd.read_csv(path, header=0 if has_header else None)
+        if df_raw.empty:
+            log.warning("load_data_aligned: %s has no data rows", path)
+            return None
 
         # Bestimme Start-Offset der Datenspalten.
         # Mit Header: start=0 (erste Spalte ist Timestamp).
@@ -113,25 +161,22 @@ def load_data_aligned(path, is_sentiment=False):
             df.columns = ["T", "C"]
             df["O"] = df["H"] = df["L"] = df["C"]
         df["T"] = _parse_timestamp_col(df["T"])
-        if is_sentiment:
-            if df["T"].dt.tz is None:
-                df["T"] = df["T"].dt.tz_localize("UTC")
-            df["T"] = df["T"].dt.tz_convert(TARGET_TZ)
-        else:
-            # Keine TZ-Lokalisierung - behandle Daten als naive Timestamps
-            # Das vermeidet DST-Probleme (ambiguous/nonexistent times)
-            pass
-        # Stelle sicher dass der Index keine TZ hat
+        # Timestamp convention (see fwbg.core.data_sources): naive timestamps are
+        # UTC and stay as they are, which also avoids DST problems (ambiguous /
+        # nonexistent local times). Values that carry a UTC offset are converted
+        # to UTC first, so the naive index is never local wall-clock time.
         if df["T"].dt.tz is not None:
-            df["T"] = df["T"].dt.tz_localize(None)
+            df["T"] = df["T"].dt.tz_convert("UTC").dt.tz_localize(None)
         df = df.set_index("T")
 
         # Validate OHLC data
         _validate_ohlc(df, path)
 
         return df
-    except Exception as e:
-        print(f"Fehler beim Laden von {path}: {e}")
+    except (FileNotFoundError, pd.errors.EmptyDataError) as exc:
+        # Absent or empty file: "no data" for this symbol. Anything else (parse
+        # errors, invalid OHLC) propagates so it is not mistaken for missing data.
+        log.warning("load_data_aligned: no data in %s: %s", path, exc)
         return None
 
 
@@ -231,9 +276,8 @@ def run_data_loading(df, data_loading_configs):
                 if RELEASE_COL in raw_df.columns:
                     # Source declares a release calendar (e.g. COT) — asof-join
                     # on release_date so bars before publication see NaN.
-                    macro_df = (
-                        raw_df.reset_index()[[RELEASE_COL, "Close"]]
-                        .rename(columns={"Close": macro_col})
+                    macro_df = raw_df.reset_index()[[RELEASE_COL, "Close"]].rename(
+                        columns={"Close": macro_col}
                     )
                     macro_df[RELEASE_COL] = pd.to_datetime(macro_df[RELEASE_COL])
                     # Normalise tz so a tz-naive bar index can compare against
@@ -242,17 +286,33 @@ def run_data_loading(df, data_loading_configs):
                     # tz-naive; we keep that domain.
                     if df.index.tz is None and macro_df[RELEASE_COL].dt.tz is not None:
                         macro_df[RELEASE_COL] = (
-                            macro_df[RELEASE_COL].dt.tz_convert("UTC").dt.tz_localize(None)
+                            macro_df[RELEASE_COL]
+                            .dt.tz_convert("UTC")
+                            .dt.tz_localize(None)
                         )
                     df = merge_respect_release(df, macro_df, prefix, [macro_col])
                 else:
                     # Legacy 1-calendar-day shift for daily series without a
                     # release calendar.  See docs/data/macro-release-dates.md
                     # for the known limitations of this path.
-                    lookup = raw_df["Close"].to_dict()
-                    df[macro_col] = prev_date.map(
-                        lambda d, lk=lookup: lk.get(d, np.nan)
-                    ).ffill()
+                    # Key by calendar date: a daily series stamped with a time
+                    # of day or a timezone would otherwise match no bar date.
+                    # A bar sees the last close dated on or before the previous
+                    # calendar day (as of), so Monday bars see Friday's close
+                    # and a missing day falls back to the close before it.
+                    days = pd.DatetimeIndex(raw_df.index)
+                    if days.tz is not None:
+                        days = days.tz_localize(None)
+                    closes = pd.Series(
+                        raw_df["Close"].to_numpy(dtype=float), index=days.normalize()
+                    )
+                    closes = closes[closes.index.notna()].dropna()
+                    closes = closes[~closes.index.duplicated(keep="last")].sort_index()
+                    df[macro_col] = (
+                        closes.asof(pd.DatetimeIndex(prev_date.to_numpy())).to_numpy()
+                        if len(closes)
+                        else np.nan
+                    )
 
             log.debug(f"Loaded {len(result.data)} items from source '{source_name}'")
 
@@ -260,11 +320,16 @@ def run_data_loading(df, data_loading_configs):
         if plugin_name:
             try:
                 cls = get_data_loader(plugin_name)
-            except ValueError:
-                log.debug(f"DataLoader plugin '{plugin_name}' not found, skipping")
-            else:
-                ctx = PipelineContext(df=df, symbol="", asset_class="")
-                ctx = cls().execute(ctx, **params)
-                df = ctx.df
+            except ValueError as exc:
+                # A configured loader that cannot be resolved must not be dropped
+                # silently: the strategy would run without the features it asks for.
+                raise ValueError(
+                    f"DataLoader plugin '{plugin_name}' is not available. If it "
+                    f"belongs to an optional plugin package, that package must be "
+                    f"installed in this environment. ({exc})"
+                ) from exc
+            ctx = PipelineContext(df=df, symbol="", asset_class="")
+            ctx = cls().execute(ctx, **params)
+            df = ctx.df
 
     return df

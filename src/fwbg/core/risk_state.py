@@ -22,6 +22,7 @@ class ClosedTradeEvent:
 class _DaySummary:
     pnl: float = 0.0
     consecutive_losses: int = 0
+    last_event_id: str | None = None
 
 
 @dataclass
@@ -39,7 +40,9 @@ class RiskState:
     max_observation_age_seconds: int = 300
 
     known: bool = field(default=False, init=False)
-    unknown_reason: str | None = field(default="broker state has not been observed", init=False)
+    unknown_reason: str | None = field(
+        default="broker state has not been observed", init=False
+    )
     observed_at: datetime | None = field(default=None, init=False)
     daily_start_balance: float = field(default=0.0, init=False)
     active_day: date | None = field(default=None, init=False)
@@ -47,6 +50,9 @@ class RiskState:
     consecutive_losses: int = field(default=0, init=False)
     rejected_orders: int = field(default=0, init=False)
     pause_until: datetime | None = field(default=None, init=False)
+    # Last closed trade on the books when the loss-streak pause was armed. Once
+    # that pause has run out it only re-arms after a newer close.
+    _pause_trigger_event_id: str | None = field(default=None, init=False, repr=False)
     _seen_event_ids: set[str] = field(default_factory=set, init=False, repr=False)
     _events_by_day: dict[date, dict[str, ClosedTradeEvent]] = field(
         default_factory=dict, init=False, repr=False
@@ -92,7 +98,11 @@ class RiskState:
                 streak += 1
             elif event.net_pnl > 0:
                 streak = 0
-        self._summaries[day] = _DaySummary(pnl=float(pnl), consecutive_losses=streak)
+        self._summaries[day] = _DaySummary(
+            pnl=float(pnl),
+            consecutive_losses=streak,
+            last_event_id=events[-1].event_id if events else None,
+        )
         if day == self.active_day:
             self.daily_pnl = float(pnl)
             self.consecutive_losses = streak
@@ -188,13 +198,26 @@ class RiskState:
             return False
         if (
             self.daily_start_balance > 0
-            and -self.daily_pnl / self.daily_start_balance >= self.max_daily_loss_percent
+            and -self.daily_pnl / self.daily_start_balance
+            >= self.max_daily_loss_percent
         ):
-            self.pause_until = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            self.pause_until = now.replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
             return False
-        if self.pause_after_consecutive_losses > 0 and self.consecutive_losses >= self.pause_after_consecutive_losses:
-            self.pause_until = now + timedelta(minutes=self.pause_duration_minutes)
-            return False
+        if (
+            self.pause_after_consecutive_losses > 0
+            and self.consecutive_losses >= self.pause_after_consecutive_losses
+        ):
+            last_event_id = self._summaries.get(
+                self.active_day, _DaySummary()
+            ).last_event_id
+            # The streak that already served its pause must not re-arm it; only
+            # a trade closed since then (a further loss) starts a new pause.
+            if last_event_id != self._pause_trigger_event_id:
+                self._pause_trigger_event_id = last_event_id
+                self.pause_until = now + timedelta(minutes=self.pause_duration_minutes)
+                return False
         return True
 
     def count_rejection(self) -> None:

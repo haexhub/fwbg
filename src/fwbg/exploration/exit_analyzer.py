@@ -9,24 +9,41 @@ import os
 from datetime import datetime, timezone
 
 import numpy as np
-import pandas as pd
 from tabulate import tabulate
 
+from fwbg.data.loader import apply_date_window, load_data_aligned
 from fwbg.exploration.mfe_mae import compute_capture_rates, compute_mfe_mae
 
 _PERCENTILES = [10, 25, 50, 60, 75, 85, 90, 95]
 _SCAN_RANGE = np.round(np.arange(0.2, 4.1, 0.1), 1)
 
 
-def analyze_asset(data_file, exit_strategy="atr_based", exit_params=None, max_bars=48):
+def analyze_asset(
+    data_file,
+    exit_strategy="atr_based",
+    exit_params=None,
+    max_bars=48,
+    start_date=None,
+    end_date=None,
+):
     """Run full MFE/MAE analysis on a single asset.
 
-    Returns a dict with mfe_mae stats, capture_matrix, and suggested_grid.
+    The data is loaded and restricted to ``[start_date, end_date)`` exactly as a
+    backtest run loads it. Returns a dict with mfe_mae stats, capture_matrix,
+    and suggested_grid.
     """
     if exit_params is None:
         exit_params = {"atr_period": 14}
 
-    df = _load_ohlcv(data_file)
+    df = load_data_aligned(data_file)
+    if df is None:
+        raise ValueError(f"cannot load {data_file}")
+    if start_date or end_date:
+        df = apply_date_window(df, start_date, end_date)
+    if df.empty:
+        raise ValueError(
+            f"{data_file} has no data in the window {start_date}..{end_date}"
+        )
     open_ = df["O"].values.astype(np.float64)
     high = df["H"].values.astype(np.float64)
     low = df["L"].values.astype(np.float64)
@@ -62,7 +79,9 @@ def analyze_asset(data_file, exit_strategy="atr_based", exit_params=None, max_ba
     wr_long, wr_short, trade_counts = compute_capture_rates(
         open_, high, low, atr, tp_scan, sl_scan, max_bars
     )
-    capture_matrix = _build_capture_matrix(wr_long, wr_short, trade_counts, tp_scan, sl_scan)
+    capture_matrix = _build_capture_matrix(
+        wr_long, wr_short, trade_counts, tp_scan, sl_scan
+    )
 
     # --- Grid Suggestion ---
     suggested_grid = _suggest_grid(
@@ -84,6 +103,7 @@ def analyze_asset(data_file, exit_strategy="atr_based", exit_params=None, max_ba
         "data_file": os.path.basename(data_file),
         "bars_analyzed": int(np.sum(valid)),
         "max_bars_forward": max_bars,
+        "window": {"start": start_date, "end": end_date},
         "exit_strategy": exit_strategy,
         "exit_params": exit_params,
         "analyzed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -103,34 +123,42 @@ def format_terminal_output(result):
         rows = []
         for p in _PERCENTILES:
             sp = str(p)
-            rows.append([
-                f"P{p}",
-                f"{data['mfe_percentiles'].get(sp, 0):.2f}",
-                f"{data['mae_percentiles'].get(sp, 0):.2f}",
-            ])
+            rows.append(
+                [
+                    f"P{p}",
+                    f"{data['mfe_percentiles'].get(sp, 0):.2f}",
+                    f"{data['mae_percentiles'].get(sp, 0):.2f}",
+                ]
+            )
         lines.append(f"\n  MFE/MAE Percentiles ({direction.upper()}) [ATR multiples]")
-        lines.append(tabulate(rows, headers=["Percentile", "MFE", "MAE"], tablefmt="simple"))
+        lines.append(
+            tabulate(rows, headers=["Percentile", "MFE", "MAE"], tablefmt="simple")
+        )
 
     # Top Capture Matrix entries
     matrix = result["capture_matrix"][:15]
     if matrix:
         rows = []
         for entry in matrix:
-            rows.append([
-                f"{entry['tp']:.1f}",
-                f"{entry['sl']:.1f}",
-                f"{entry['rrr']:.2f}",
-                f"{entry['win_rate_long']:.1%}",
-                f"{entry['win_rate_short']:.1%}",
-                f"{entry['edge_long']:+.3f}",
-                f"{entry['edge_short']:+.3f}",
-            ])
+            rows.append(
+                [
+                    f"{entry['tp']:.1f}",
+                    f"{entry['sl']:.1f}",
+                    f"{entry['rrr']:.2f}",
+                    f"{entry['win_rate_long']:.1%}",
+                    f"{entry['win_rate_short']:.1%}",
+                    f"{entry['edge_long']:+.3f}",
+                    f"{entry['edge_short']:+.3f}",
+                ]
+            )
         lines.append("\n  Top TP/SL Combinations (by long edge)")
-        lines.append(tabulate(
-            rows,
-            headers=["TP", "SL", "RRR", "WR Long", "WR Short", "Edge L", "Edge S"],
-            tablefmt="simple",
-        ))
+        lines.append(
+            tabulate(
+                rows,
+                headers=["TP", "SL", "RRR", "WR Long", "WR Short", "Edge L", "Edge S"],
+                tablefmt="simple",
+            )
+        )
 
     # Suggested Grid
     grid = result["suggested_grid"]
@@ -153,14 +181,6 @@ def write_json(result, output_path):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _load_ohlcv(data_file):
-    """Load OHLCV from CSV. Expects columns T,O,H,L,C,V or positional."""
-    df = pd.read_csv(data_file)
-    if "O" not in df.columns:
-        # Positional: Date, Open, High, Low, Close, Volume
-        df.columns = ["T", "O", "H", "L", "C", "V"][:len(df.columns)]
-    return df
-
 
 def _compute_atr(high, low, close, period):
     """Compute ATR via exponential moving average of True Range."""
@@ -174,16 +194,15 @@ def _compute_atr(high, low, close, period):
             abs(low[i] - close[i - 1]),
         )
 
-    atr = np.empty(n)
-    atr[:period] = np.nan
+    # Warm-up bars (the first period - 1) stay NaN: back-filling them with the first
+    # valid ATR would hand them a value computed from the bars that follow.
+    atr = np.full(n, np.nan)
+    if n < period:
+        return atr
     atr[period - 1] = np.mean(tr[:period])
     alpha = 2.0 / (period + 1)
     for i in range(period, n):
         atr[i] = alpha * tr[i] + (1 - alpha) * atr[i - 1]
-
-    # Fill leading NaN with first valid ATR
-    first_valid = atr[period - 1]
-    atr[:period - 1] = first_valid
 
     return atr
 
@@ -208,16 +227,18 @@ def _build_capture_matrix(wr_long, wr_short, trade_counts, tp_vals, sl_vals):
             # Edge = E[PnL] per trade in ATR units: WR*TP - (1-WR)*SL
             edge_l = wl * tp - (1 - wl) * sl
             edge_s = ws * tp - (1 - ws) * sl
-            entries.append({
-                "tp": round(float(tp), 1),
-                "sl": round(float(sl), 1),
-                "rrr": round(rrr, 2),
-                "win_rate_long": round(float(wl), 4),
-                "win_rate_short": round(float(ws), 4),
-                "edge_long": round(float(edge_l), 4),
-                "edge_short": round(float(edge_s), 4),
-                "resolved_trades": int(trade_counts[ti, si]),
-            })
+            entries.append(
+                {
+                    "tp": round(float(tp), 1),
+                    "sl": round(float(sl), 1),
+                    "rrr": round(rrr, 2),
+                    "win_rate_long": round(float(wl), 4),
+                    "win_rate_short": round(float(ws), 4),
+                    "edge_long": round(float(edge_l), 4),
+                    "edge_short": round(float(edge_s), 4),
+                    "resolved_trades": int(trade_counts[ti, si]),
+                }
+            )
 
     entries.sort(key=lambda e: e["edge_long"], reverse=True)
     return entries

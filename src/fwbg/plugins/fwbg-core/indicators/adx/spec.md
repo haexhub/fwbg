@@ -1,6 +1,6 @@
 # Plugin Spec — adx
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -8,7 +8,7 @@ Computes the Average Directional Index (ADX) trend-strength value (0-100) over o
 
 ## Summary
 
-ADX indicator that measures trend strength on a 0-100 scale (direction-agnostic) for each configured period, emitting one shifted feature column per period (adx_{period}) computed via ta.trend.adx over the high/low/close columns.
+ADX indicator that measures trend strength on a 0-100 scale (direction-agnostic) for each configured period, emitting one shifted feature column per period (adx_{period}) computed with Wilder smoothing (values from ta.trend.adx, warm-up masked) over the high/low/close columns.
 
 ## Inputs
 
@@ -37,7 +37,9 @@ ADX indicator that measures trend strength on a 0-100 scale (direction-agnostic)
 ## Edge Cases
 
 - periods argument is None → falls back to the default [7, 14, 21]
-- A period larger than the number of rows in df → ta.trend.adx will produce NaN values for those rows
+- Warm-up: the first value needs 2 * period bars, so rows 0..2*period-2 are NaN before the one-bar shift (ta fills them with 0.0 and raises on shorter input; the plugin masks and guards this).
+- Fewer than 2 * period valid rows in df → the column is all NaN.
+- Bars with a NaN high, low or close are left out of the recursion (the gap is bridged) and stay NaN in the output; later values are not poisoned.
 - Empty periods list → compute() returns the input DataFrame unchanged (no feature columns added) and get_feature_columns returns an empty list
 - Missing required H/L/C columns in df → KeyError raised by df['H'|'L'|'C'] lookup
 - Very short periods (e.g. below 2) may be rejected by the schema min=2 constraint at validation time

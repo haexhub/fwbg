@@ -6,6 +6,7 @@ Detects zones where supply turns into demand (or vice versa):
 - When a zone is broken, it flips polarity (support -> resistance, resistance -> support)
 - Tracks active flip zones with distance, strength, and touch count
 """
+
 from typing import Dict, List, Union
 
 import numpy as np
@@ -21,9 +22,9 @@ def _find_swing_points(highs: np.ndarray, lows: np.ndarray, lookback: int):
     swing_lows = []
 
     for i in range(lookback, n - lookback):
-        if highs[i] == np.max(highs[i - lookback:i + lookback + 1]):
+        if highs[i] == np.max(highs[i - lookback : i + lookback + 1]):
             swing_highs.append((i, highs[i]))
-        if lows[i] == np.min(lows[i - lookback:i + lookback + 1]):
+        if lows[i] == np.min(lows[i - lookback : i + lookback + 1]):
             swing_lows.append((i, lows[i]))
 
     return swing_highs, swing_lows
@@ -82,10 +83,15 @@ def _compute_sdf_features(
                 continue
             if c[i] > zone["level"] + zone_width:
                 strength = (c[i] - zone["level"]) / current_atr
-                flip_zones.append({
-                    "level": zone["level"], "type": "bull", "bar": i,
-                    "strength": strength, "touches": 0,
-                })
+                flip_zones.append(
+                    {
+                        "level": zone["level"],
+                        "type": "bull",
+                        "bar": i,
+                        "strength": strength,
+                        "touches": 0,
+                    }
+                )
             else:
                 surviving_resistance.append(zone)
         resistance_zones = surviving_resistance
@@ -96,10 +102,15 @@ def _compute_sdf_features(
                 continue
             if c[i] < zone["level"] - zone_width:
                 strength = (zone["level"] - c[i]) / current_atr
-                flip_zones.append({
-                    "level": zone["level"], "type": "bear", "bar": i,
-                    "strength": strength, "touches": 0,
-                })
+                flip_zones.append(
+                    {
+                        "level": zone["level"],
+                        "type": "bear",
+                        "bar": i,
+                        "strength": strength,
+                        "touches": 0,
+                    }
+                )
             else:
                 surviving_support.append(zone)
         support_zones = surviving_support
@@ -172,21 +183,33 @@ class SupplyDemandFlipIndicator(BaseIndicator):
     group = "structure"
 
     _FEATURES = [
-        "sdf_bull_active", "sdf_bear_active",
-        "sdf_bull_dist", "sdf_bear_dist",
-        "sdf_bull_strength", "sdf_bear_strength",
-        "sdf_bull_touches", "sdf_bear_touches",
+        "sdf_bull_active",
+        "sdf_bear_active",
+        "sdf_bull_dist",
+        "sdf_bear_dist",
+        "sdf_bull_strength",
+        "sdf_bear_strength",
+        "sdf_bull_touches",
+        "sdf_bear_touches",
     ]
 
     def compute(
-        self, df: pd.DataFrame,
-        swing_lookback: int = 10, zone_atr_width: float = 0.3,
-        atr_period: int = 14, max_active_zones: int = 20,
-        zone_expiry: int = 200, **params,
+        self,
+        df: pd.DataFrame,
+        swing_lookback: int = 10,
+        zone_atr_width: float = 0.3,
+        atr_period: int = 14,
+        max_active_zones: int = 20,
+        zone_expiry: int = 200,
+        **params,
     ) -> pd.DataFrame:
         features = _compute_sdf_features(
-            df, swing_lookback, zone_atr_width, atr_period,
-            max_active_zones, zone_expiry,
+            df,
+            swing_lookback,
+            zone_atr_width,
+            atr_period,
+            max_active_zones,
+            zone_expiry,
         )
         if not features:
             return df
@@ -196,43 +219,58 @@ class SupplyDemandFlipIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return ["sdf_bull_active", "sdf_bear_active"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {
-            "swing_lookback": 10, "zone_atr_width": 0.3,
-            "atr_period": 14, "max_active_zones": 20, "zone_expiry": 200,
+            "swing_lookback": 10,
+            "zone_atr_width": 0.3,
+            "atr_period": 14,
+            "max_active_zones": 20,
+            "zone_expiry": 200,
         }
 
     @classmethod
     def get_param_schema(cls) -> dict:
         return {
             "swing_lookback": {
-                "type": "int", "default": 10,
+                "type": "int",
+                "default": 10,
                 "description": "N-bar lookback for swing high/low detection.",
-                "min": 3, "max": 50, "step": 1,
+                "min": 3,
+                "max": 50,
+                "step": 1,
             },
             "zone_atr_width": {
-                "type": "float", "default": 0.3,
+                "type": "float",
+                "default": 0.3,
                 "description": "Zone width as fraction of ATR.",
-                "min": 0.1, "max": 1.0, "step": 0.1,
+                "min": 0.1,
+                "max": 1.0,
+                "step": 0.1,
             },
             "atr_period": {
-                "type": "int", "default": 14,
+                "type": "int",
+                "default": 14,
                 "description": "ATR period for normalizing distances and zone width.",
-                "min": 2, "max": 100, "step": 1,
+                "min": 2,
+                "max": 100,
+                "step": 1,
             },
             "max_active_zones": {
-                "type": "int", "default": 20,
+                "type": "int",
+                "default": 20,
                 "description": "Maximum active flip zones to track.",
-                "min": 5, "max": 50, "step": 5,
+                "min": 5,
+                "max": 50,
+                "step": 5,
             },
             "zone_expiry": {
-                "type": "int", "default": 200,
+                "type": "int",
+                "default": 200,
                 "description": "Bars after which a zone expires.",
-                "min": 50, "max": 1000, "step": 50,
+                "min": 50,
+                "max": 1000,
+                "step": 50,
             },
         }
 

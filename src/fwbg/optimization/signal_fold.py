@@ -41,7 +41,11 @@ def prepare_signal_fold_data(fold, fold_indicators, precomputed_raw_df,
            f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)", sym)
 
     # Add composed signal columns to required features
-    has_time_filters = getattr(ctx, "allowed_hours", None) or getattr(ctx, "allowed_days", None)
+    has_time_filters = (
+        getattr(ctx, "allowed_hours", None)
+        or getattr(ctx, "allowed_days", None)
+        or getattr(ctx, "entry_hours", None) is not None
+    )
     signal_rules = getattr(ctx, "signal_rules", None)
     has_signal_rules = signal_rules and any(
         signal_rules.get(d, {}).get("conditions") for d in ("long", "short")
@@ -127,7 +131,10 @@ def process_signal_fold(fold, train_df, test_df, full_pool, ctx, sym):
             "rrr": tp / sl if sl > 0 else 0,
             "timeout_bars": candidate["timeout_bars"],
             "model_hyperparameters": candidate["model_hyperparameters"],
+            "exit_modifier": exit_cfg.exit_modifier,
             "exit_modifier_params": exit_cfg.exit_modifier_params,
+            "entry_modifier": exit_cfg.entry_modifier,
+            "entry_modifier_params": exit_cfg.entry_modifier_params,
             "exit_strategy": exit_cfg.name,
             "exit_params": exit_cfg.params,
         },

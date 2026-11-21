@@ -76,8 +76,8 @@ class TestSimulateTrade:
         )
         assert trade_result["result"] == -1.0, "Clear SL hit should return loss"
 
-    def test_no_exit_returns_none(self):
-        """Trade ohne TP/SL Hit sollte None zurückgeben."""
+    def test_no_exit_closes_at_last_bar(self):
+        """Trade ohne TP/SL Hit wird am letzten Bar zum Close glattgestellt."""
         # Für "No exit" müssen die Bars zwischen TP und SL liegen
         # Long Entry bei 1.0: entry = 1.0 + spread + slippage = 1.015
         # TP = 1.015 + 0.01 = 1.025, SL = 1.015 - 0.01 = 1.005
@@ -90,8 +90,10 @@ class TestSimulateTrade:
             test_closes, test_highs, test_lows,
             0, 1, self.tp_distance, self.sl_distance, self.spread, max_bars=10
         )
-        # No exit means None is returned
-        assert trade_result is None, "No exit should return None"
+        # An open position is closed, not dropped: here at a loss (close 1.0 < entry 1.015)
+        assert trade_result["exit_reason"] == "max_bars"
+        assert trade_result["exit_idx"] == 10
+        assert trade_result["result"] == -1.0
 
     def test_insufficient_bars_returns_none(self):
         """Zu wenig Bars sollte None zurückgeben."""

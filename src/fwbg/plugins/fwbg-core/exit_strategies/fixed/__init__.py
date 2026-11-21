@@ -3,13 +3,15 @@ Fixed Exit Strategy Plugin.
 
 Verwendet fixe TP/SL-Werte basierend auf Spread-Multiplikatoren.
 """
+
 from typing import Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
-import ta
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
+from fwbg.utils.indicator_math import wilder_atr
 from fwbg.simulation import compute_targets_numba
+from fwbg.simulation.trade import resolve_entry_delay
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -30,7 +32,7 @@ class FixedExitStrategy(BaseExitStrategy):
         ctx: "SimulationContext",
         params=None,
         return_durations: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Berechnet Win/Loss Targets für Long und Short.
@@ -44,6 +46,7 @@ class FixedExitStrategy(BaseExitStrategy):
         Returns:
             (targets_long, targets_short) oder
             (targets_long, targets_short, durations_long, durations_short)
+            Labels, deren Fenster ueber das Datenende hinausreicht, sind NaN.
         """
         if params is not None:
             tp = params.tp_value
@@ -65,11 +68,13 @@ class FixedExitStrategy(BaseExitStrategy):
         slippage = ctx.spread * 0.5
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
+        entry_delay = resolve_entry_delay(ctx.exit_params)
 
         # === ENTRY MODIFIER DISPATCH ===
         entry_modifier_name = getattr(ctx, "entry_modifier", None)
         if entry_modifier_name and isinstance(entry_modifier_name, str):
             from fwbg.core.registry import get_entry_modifier
+
             entry_mod_cls = get_entry_modifier(entry_modifier_name)
             entry_mod = entry_mod_cls()
             entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
@@ -81,9 +86,7 @@ class FixedExitStrategy(BaseExitStrategy):
             elif "vol_atr" in df.columns:
                 atr_v = df["vol_atr"].values.astype(np.float64)
             else:
-                atr_series = ta.volatility.average_true_range(
-                    df["H"], df["L"], df["C"], window=14
-                )
+                atr_series = wilder_atr(df["H"], df["L"], df["C"], window=14)
                 atr_v = atr_series.values.astype(np.float64)
             atr_v = np.nan_to_num(atr_v, nan=0.0)
 
@@ -116,13 +119,24 @@ class FixedExitStrategy(BaseExitStrategy):
                 timeout_val=timeout_val,
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
+                entry_delay=entry_delay,
+                nan_incomplete=True,
                 **entry_mod_params,
             )
 
         result = compute_targets_numba(
-            opn_v, cls_v, hgh_v, low_v,
-            tp_distances, sl_distances, ctx.spread, slippage,
-            max_bars, timeout_val
+            opn_v,
+            cls_v,
+            hgh_v,
+            low_v,
+            tp_distances,
+            sl_distances,
+            ctx.spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            nan_incomplete=True,
+            entry_delay=entry_delay,
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)

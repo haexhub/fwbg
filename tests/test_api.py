@@ -127,7 +127,15 @@ class TestPluginEndpoints:
         """Every plugin has the fields needed by the UI."""
         resp = client.get("/api/plugins")
         plugins = resp.json()
-        required = {"fqn", "name", "namespace", "phase", "version", "param_schema", "defaults"}
+        required = {
+            "fqn",
+            "name",
+            "namespace",
+            "phase",
+            "version",
+            "param_schema",
+            "defaults",
+        }
         for p in plugins:
             missing = required - set(p.keys())
             assert not missing, f"Plugin {p['fqn']} missing fields: {missing}"
@@ -172,12 +180,27 @@ class TestPluginEndpoints:
         assert p["phase"] == "indicators"
         assert len(p["param_schema"]) > 0
 
-    def test_plugin_exposes_depends_on(self, client):
+    def test_plugin_exposes_depends_on(self, client, registry, monkeypatch):
         """depends_on is exposed so agent tooling can validate it before authoring."""
-        resp = client.get("/api/plugins")
-        plugins = {p["fqn"]: p for p in resp.json()}
-        regime_cluster = plugins["fwbg-premium:regime_cluster"]
-        assert regime_cluster["depends_on"] == ["regime", "volatility"]
+        from fwbg_sdk import BaseIndicator
+
+        class DependentIndicator(BaseIndicator):
+            name = "_api_depends_on_probe"
+            depends_on = ["trend", "volatility"]
+
+            def compute(self, df, **params):
+                return df
+
+            def get_feature_columns(self, params=None):
+                return []
+
+        monkeypatch.setitem(
+            registry._plugins, "test-pkg:_api_depends_on_probe", DependentIndicator
+        )
+        resp = client.get("/api/plugins/test-pkg:_api_depends_on_probe")
+        assert resp.status_code == 200
+        assert resp.json()["depends_on"] == ["trend", "volatility"]
+        plugins = {p["fqn"]: p for p in client.get("/api/plugins").json()}
         # Plugins without declared dependencies still expose the (empty) field.
         adx = plugins["fwbg-core:adx"]
         assert adx["depends_on"] == []
@@ -216,15 +239,27 @@ class TestPluginEndpoints:
         assert resp.status_code == 404
 
     def test_all_phases_represented(self, client):
-        """All pipeline phases have at least one plugin."""
+        """The core package provides plugins for its pipeline phases."""
         resp = client.get("/api/plugins")
         phases = {p["phase"] for p in resp.json()}
-        assert "indicators" in phases
-        assert "feature_selection" in phases
+        # Feature selection, preprocessing and further plugins come from
+        # separately installed plugin packages and are not asserted here.
+        assert {"indicators", "exit_strategies", "model"} <= phases
 
     def test_plugin_schema_types_valid(self, client):
         """All param types are one of the known types."""
-        valid_types = {"int", "float", "bool", "string", "list[int]", "list[float]", "list[string]", "list[object]", "choice", "session_ranges"}
+        valid_types = {
+            "int",
+            "float",
+            "bool",
+            "string",
+            "list[int]",
+            "list[float]",
+            "list[string]",
+            "list[object]",
+            "choice",
+            "session_ranges",
+        }
         resp = client.get("/api/plugins")
         for p in resp.json():
             for param_name, schema in p["param_schema"].items():
@@ -246,14 +281,14 @@ class TestStrategyEndpoints:
         resp = client.get("/api/strategies")
         assert resp.status_code == 200
         strategies = resp.json()
-        # We know at least sr_trend_continuation and exploration exist
+        # We know at least orb_exploration and smc_choch_fvg exist
         names = [s["filename"] for s in strategies]
-        assert "sr_trend_continuation" in names
-        assert "exploration" in names
+        assert "orb_exploration" in names
+        assert "smc_choch_fvg" in names
 
     def test_load_strategy(self, client):
         """Load a real strategy file and verify structure."""
-        resp = client.get("/api/strategies/sr_trend_continuation")
+        resp = client.get("/api/strategies/orb_exploration")
         assert resp.status_code == 200
         data = resp.json()
         # Verify it has the expected strategy sections
@@ -279,7 +314,13 @@ class TestStrategyEndpoints:
             "name": "Test Strategy",
             "data": {
                 "pipeline": {"indicators": [{"name": "trend", "params": {}}]},
-                "exit_strategies": [{"name": "fixed", "params": {"tp_mult": 1.0, "sl_mult": 1.0}, "ct": [0.5]}],
+                "exit_strategies": [
+                    {
+                        "name": "fixed",
+                        "params": {"tp_mult": 1.0, "sl_mult": 1.0},
+                        "ct": [0.5],
+                    }
+                ],
                 "model": {"type": "xgboost"},
                 "grids": {},
                 "validation": {"method": "walk_forward", "folds": 4},
@@ -376,7 +417,9 @@ class TestStrategyEndpoints:
     def test_create_valid_spaced_name(self, strategy_client):
         """A normal name with spaces still lowercases to test_strategy.json."""
         client, tmp_dir = strategy_client
-        resp = client.post("/api/strategies", json={"name": "Test Strategy", "data": {}})
+        resp = client.post(
+            "/api/strategies", json={"name": "Test Strategy", "data": {}}
+        )
         assert resp.status_code == 200
         assert resp.json()["filename"] == "test_strategy"
         assert (tmp_dir / "test_strategy.json").exists()
@@ -432,9 +475,12 @@ class TestRunEndpoints:
 
     def test_start_run_nonexistent_strategy(self, client):
         """Starting a run with unknown strategy returns 404."""
-        resp = client.post("/api/runs/start", json={
-            "strategy_name": "nonexistent_strategy_xyz",
-        })
+        resp = client.post(
+            "/api/runs/start",
+            json={
+                "strategy_name": "nonexistent_strategy_xyz",
+            },
+        )
         assert resp.status_code == 404
 
     def test_cancel_nonexistent_job(self, client):
@@ -461,7 +507,11 @@ class TestSchemaConsistency:
         resp = client.get("/api/plugins")
         for p in resp.json():
             for param_name, schema in p["param_schema"].items():
-                if schema["type"] in ("int", "float") and "min" in schema and "max" in schema:
+                if (
+                    schema["type"] in ("int", "float")
+                    and "min" in schema
+                    and "max" in schema
+                ):
                     default = schema["default"]
                     if default is not None:
                         assert schema["min"] <= default <= schema["max"], (
@@ -475,16 +525,18 @@ class TestSchemaConsistency:
         for p in resp.json():
             for param_name, schema in p["param_schema"].items():
                 if schema["type"] == "choice":
-                    assert "choices" in schema and isinstance(schema["choices"], list), (
-                        f"{p['fqn']}.{param_name}: choice type without choices list"
-                    )
+                    assert "choices" in schema and isinstance(
+                        schema["choices"], list
+                    ), f"{p['fqn']}.{param_name}: choice type without choices list"
 
     def test_described_plugins_have_param_descriptions(self, client):
         """Plugins with descriptions in manifest also have param descriptions."""
         resp = client.get("/api/plugins")
         plugins_with_descriptions = [p for p in resp.json() if p.get("description")]
         # At least some core plugins should have descriptions
-        assert len(plugins_with_descriptions) > 5, "Expected >5 plugins with descriptions"
+        assert len(plugins_with_descriptions) > 5, (
+            "Expected >5 plugins with descriptions"
+        )
 
     def test_strategy_plugins_exist_in_registry(self, client):
         """All plugins referenced in strategies exist in the registry."""
@@ -495,7 +547,12 @@ class TestSchemaConsistency:
         for strat_info in strategies_resp.json():
             strat = client.get(f"/api/strategies/{strat_info['filename']}").json()
             pipeline = strat.get("pipeline", {})
-            for section in ["indicators", "preprocessing", "feature_selection", "data_loading"]:
+            for section in [
+                "indicators",
+                "preprocessing",
+                "feature_selection",
+                "data_loading",
+            ]:
                 for entry in pipeline.get(section, []):
                     plugin_name = entry.get("name", "")
                     assert plugin_name in registered_names, (

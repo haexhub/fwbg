@@ -27,6 +27,7 @@ class PortfolioSettings:
     selection_count: int = 2
     equity_assets: tuple[str, ...] = ()
     defensive_asset: str | None = None
+    overlay: pd.Series | None = None
 
     def validate(self) -> None:
         """Reject invalid allocation weights, strategy parameters, costs and dates."""
@@ -68,6 +69,13 @@ class PortfolioSettings:
                     raise ValueError("start/end must be timezone-free dates")
         if self.start and self.end and pd.Timestamp(self.start) > pd.Timestamp(self.end):
             raise ValueError("start must precede end")
+        if self.overlay is not None and (
+            not isinstance(self.overlay, pd.Series)
+            or not self.overlay.index.is_monotonic_increasing
+            or not self.overlay.index.is_unique
+            or self.overlay.dtype != bool
+        ):
+            raise ValueError("overlay must be a sorted, unique boolean Series")
 
 
 @dataclass
@@ -150,7 +158,18 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
     weight_rows, signal_rows, trade_rows = [], [], []
     boundary_lookup = {int(pos): n for n, pos in enumerate(boundaries)}
     price_values = prices.to_numpy()
+    # An overlay sets the whole book to cash for the next month when its condition
+    # is false. ``exposure_mask`` already delays a month-end decision to the first
+    # session after that month end, so a rebalance executing on session ``i`` reads
+    # the mask at ``i`` -- reading ``i - 1`` would apply a second month of delay.
+    overlay = None
+    if settings.overlay is not None:
+        overlay = settings.overlay.reindex(prices.index, method="ffill")
+        if overlay.isna().any():
+            raise ValueError("overlay does not cover the evaluated price dates")
+        overlay = overlay.to_numpy()
 
+    held = None
     for i in range(first, len(prices)):
         date = prices.index[i]
         ratios = price_values[i] / price_values[i - 1]
@@ -161,7 +180,10 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
             target, statistic = allocation(
                 price_values[month_end_positions], base, assets, settings
             )
-            targets = {"trend": target, "static": base}
+            invested = overlay is None or bool(overlay[i])
+            if not invested:
+                target = np.zeros(len(assets))
+            targets = {"trend": target, "static": base if invested else np.zeros(len(assets))}
             for j, asset in enumerate(assets):
                 signal_rows.append(
                     {
@@ -173,8 +195,11 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
                         "target_weight": float(target[j]),
                     }
                 )
-        if i == first:
-            targets["equity_buy_hold"] = benchmark
+        # Buy-and-hold is set once, unless an overlay moves it to cash and back.
+        hold = overlay is None or bool(overlay[i])
+        if i == first or (overlay is not None and i in boundary_lookup and hold != held):
+            targets["equity_buy_hold"] = benchmark if hold else np.zeros(len(assets))
+            held = hold
 
         row = {}
         for name in names:

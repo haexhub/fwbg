@@ -9,7 +9,9 @@ Pipeline:
 
 Uses SSE (Server-Sent Events) to stream progress and partial results.
 """
+
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -24,28 +26,29 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from fwbg.api.deps import get_test_results_dir
 from fwbg.api._paths import safe_load_json, safe_results_path, validate_id
 from fwbg.data import load_data_aligned
-from fwbg.pipeline.features import compute_indicator_pool
+from fwbg.pipeline.features import compute_indicator_pool, indicator_signal_columns
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 # Indicators to skip (need external data, special config, or internal-only)
-_SKIP_INDICATORS = frozenset({
-    "autoencoder_features",   # Needs training data
-    "adversarial_validation", # Needs train/test split
-    "calendar_events",        # Needs external data
-    "cross_features",         # Needs specific feature pairs
-    "computed_signal",        # Internal (signal composition)
-    "cusum_events",           # Needs specific config
-    "multi_timeframe",        # Needs multi-TF data
-    "macro_surprise",         # Needs external macro data
-    "market_regime",          # Duplicate of regime
-    "regime_cluster",         # Depends on regime
-})
+_SKIP_INDICATORS = frozenset(
+    {
+        "autoencoder_features",  # Needs training data
+        "adversarial_validation",  # Needs train/test split
+        "calendar_events",  # Needs external data
+        "cross_features",  # Needs specific feature pairs
+        "computed_signal",  # Internal (signal composition)
+        "cusum_events",  # Needs specific config
+        "multi_timeframe",  # Needs multi-TF data
+        "macro_surprise",  # Needs external macro data
+        "market_regime",  # Duplicate of regime
+        "regime_cluster",  # Depends on regime
+    }
+)
 
 # Per-indicator timeout (seconds) for the thread pool future
 _INDICATOR_TIMEOUT = 120
@@ -94,6 +97,7 @@ def _resolve_csv_path(strategy: dict, symbol: str, timeframe: str) -> Path:
         raise HTTPException(400, "Strategy has no datasource configured")
 
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
+
     try:
         ds = get_data_source(ds_name)
     except ValueError:
@@ -111,6 +115,7 @@ def _resolve_csv_path(strategy: dict, symbol: str, timeframe: str) -> Path:
 def _get_available_indicators() -> list[str]:
     """Get all indicator plugin names that can be computed."""
     from fwbg.pipeline.registry import get_registry, PluginPhase
+
     registry = get_registry()
     registry.auto_discover()
     all_plugins = registry.list_plugins(phase=PluginPhase.INDICATORS)
@@ -122,15 +127,9 @@ def _get_available_indicators() -> list[str]:
     return sorted(names)
 
 
-def _ensure_registry_initialized() -> None:
-    """Pre-initialize the plugin registry once (avoids repeated auto_discover)."""
-    from fwbg.pipeline.registry import get_registry
-    registry = get_registry()
-    registry.auto_discover()
-
-
 def _compute_single_indicator(
-    df: pd.DataFrame, ind_name: str,
+    df: pd.DataFrame,
+    ind_name: str,
     params: dict | None = None,
 ) -> tuple[str, pd.DataFrame, float]:
     """Compute a single indicator, return (name, result_df, elapsed_seconds).
@@ -141,7 +140,8 @@ def _compute_single_indicator(
     t0 = time.monotonic()
     if params is not None:
         result = compute_indicator_pool(
-            df, indicators=[{"name": ind_name, "params": params}],
+            df,
+            indicators=[{"name": ind_name, "params": params}],
         )
     else:
         result = compute_indicator_pool(df, indicators=[ind_name])
@@ -165,6 +165,7 @@ def _compute_effect_size(wins: np.ndarray, losses: np.ndarray) -> float:
 def _compute_auc(wins: np.ndarray, losses: np.ndarray) -> float:
     """AUC via Mann-Whitney U statistic (probability that a random win > random loss)."""
     from scipy.stats import mannwhitneyu
+
     try:
         u_stat, _ = mannwhitneyu(wins, losses, alternative="two-sided")
         return float(u_stat / (len(wins) * len(losses)))
@@ -173,8 +174,10 @@ def _compute_auc(wins: np.ndarray, losses: np.ndarray) -> float:
 
 
 def _analyze_features(
-    sampled: pd.DataFrame, feature_cols: list[str],
-    win_mask: np.ndarray, loss_mask: np.ndarray,
+    sampled: pd.DataFrame,
+    feature_cols: list[str],
+    win_mask: np.ndarray,
+    loss_mask: np.ndarray,
     indicator_map: dict[str, str] | None = None,
 ) -> list[dict]:
     """Run statistical tests on all feature columns."""
@@ -229,9 +232,12 @@ def _analyze_features(
 
 
 def _analyze_direction(
-    sampled: pd.DataFrame, feature_cols: list[str],
-    directions: list[str], pnls: np.ndarray,
-    win_mask: np.ndarray, loss_mask: np.ndarray,
+    sampled: pd.DataFrame,
+    feature_cols: list[str],
+    directions: list[str],
+    pnls: np.ndarray,
+    win_mask: np.ndarray,
+    loss_mask: np.ndarray,
     indicator_map: dict[str, str] | None = None,
 ) -> dict:
     """Per-direction discovery (long/short)."""
@@ -293,8 +299,10 @@ def _analyze_direction(
 
 
 def _analyze_combinations_for_mask(
-    sampled: pd.DataFrame, top_features: list[dict],
-    trade_mask: np.ndarray, win_mask: np.ndarray,
+    sampled: pd.DataFrame,
+    top_features: list[dict],
+    trade_mask: np.ndarray,
+    win_mask: np.ndarray,
     indicator_map: dict[str, str] | None = None,
     max_features: int = 20,
     min_trades: int = 15,
@@ -383,33 +391,37 @@ def _analyze_combinations_for_mask(
             other_losses = int(other_mask.sum()) - other_wins
 
             try:
-                _, p_value = fisher_exact([
-                    [combined_wins, combined_losses],
-                    [other_wins, other_losses],
-                ])
+                _, p_value = fisher_exact(
+                    [
+                        [combined_wins, combined_losses],
+                        [other_wins, other_losses],
+                    ]
+                )
             except ValueError:
                 p_value = 1.0
 
-            results.append({
-                "feature_a": col_a,
-                "feature_b": col_b,
-                "indicator_a": ind_a,
-                "indicator_b": ind_b,
-                "op_a": feature_info[col_a]["op"],
-                "op_b": feature_info[col_b]["op"],
-                "threshold_a": feature_info[col_a]["threshold"],
-                "threshold_b": feature_info[col_b]["threshold"],
-                "wr_a": round(feature_wr[col_a], 4),
-                "wr_b": round(feature_wr[col_b], 4),
-                "wr_combined": round(combined_wr, 4),
-                "base_wr": round(base_wr, 4),
-                "synergy": round(synergy, 4),
-                "lift": round(combined_wr - base_wr, 4),
-                "n_trades": n_combined,
-                "n_wins": combined_wins,
-                "p_value": round(float(p_value), 6),
-                "significant": bool(p_value < 0.05),
-            })
+            results.append(
+                {
+                    "feature_a": col_a,
+                    "feature_b": col_b,
+                    "indicator_a": ind_a,
+                    "indicator_b": ind_b,
+                    "op_a": feature_info[col_a]["op"],
+                    "op_b": feature_info[col_b]["op"],
+                    "threshold_a": feature_info[col_a]["threshold"],
+                    "threshold_b": feature_info[col_b]["threshold"],
+                    "wr_a": round(feature_wr[col_a], 4),
+                    "wr_b": round(feature_wr[col_b], 4),
+                    "wr_combined": round(combined_wr, 4),
+                    "base_wr": round(base_wr, 4),
+                    "synergy": round(synergy, 4),
+                    "lift": round(combined_wr - base_wr, 4),
+                    "n_trades": n_combined,
+                    "n_wins": combined_wins,
+                    "p_value": round(float(p_value), 6),
+                    "significant": bool(p_value < 0.05),
+                }
+            )
 
     results.sort(key=lambda x: x["synergy"], reverse=True)
 
@@ -427,8 +439,10 @@ def _analyze_combinations_for_mask(
 
 
 def _analyze_combinations(
-    sampled: pd.DataFrame, direction_features: dict[str, list[dict]],
-    directions: list[str], pnls: np.ndarray,
+    sampled: pd.DataFrame,
+    direction_features: dict[str, list[dict]],
+    directions: list[str],
+    pnls: np.ndarray,
     win_mask: np.ndarray,
     indicator_map: dict[str, str] | None = None,
     max_features: int = 20,
@@ -455,8 +469,13 @@ def _analyze_combinations(
             continue
 
         result[dir_label] = _analyze_combinations_for_mask(
-            sampled, top, dir_mask, win_mask,
-            indicator_map, max_features, min_trades,
+            sampled,
+            top,
+            dir_mask,
+            win_mask,
+            indicator_map,
+            max_features,
+            min_trades,
         )
 
     return result
@@ -464,6 +483,7 @@ def _analyze_combinations(
 
 class _NumpyEncoder(json.JSONEncoder):
     """JSON encoder that converts numpy scalars to native Python types."""
+
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
@@ -480,7 +500,8 @@ def _sse_event(event: str, data: dict) -> str:
 
 
 def _cache_path(run_id: str, symbol: str) -> Path:
-    return get_test_results_dir() / run_id / "discovery" / f"{symbol}.json"
+    symbol_hash = hashlib.sha256(symbol.encode("utf-8")).hexdigest()
+    return safe_results_path(run_id, "discovery", f"{symbol_hash}.json")
 
 
 def _load_cached_discovery(run_id: str, symbol: str) -> dict | None:
@@ -499,32 +520,42 @@ def _save_discovery_cache(run_id: str, symbol: str, result: dict) -> None:
     path.write_text(json.dumps(result, cls=_NumpyEncoder, ensure_ascii=False, indent=2))
 
 
-async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> AsyncGenerator[str, None]:
+async def _discovery_stream(
+    run_id: str, symbol: str, force: bool = False
+) -> AsyncGenerator[str, None]:
     """Async generator that yields SSE events during discovery.
 
-    Indicators are computed in parallel via asyncio.run_in_executor so that
-    cancellation propagates cleanly when the client disconnects or the server
-    is shut down with Ctrl+C — no thread-join deadlock.
+    Every blocking step (file I/O, data loading, plugin discovery, the
+    statistical analysis) runs in a worker thread so one discovery cannot
+    stall the event loop for other requests. Indicators are computed in
+    parallel via asyncio.run_in_executor so that cancellation propagates
+    cleanly when the client disconnects or the server is shut down with
+    Ctrl+C — no thread-join deadlock.
     """
     if not force:
-        cached = _load_cached_discovery(run_id, symbol)
+        cached = await asyncio.to_thread(_load_cached_discovery, run_id, symbol)
         if cached is not None:
             cached["cached"] = True
             yield _sse_event("done", cached)
             return
 
     try:
-        strategy = _load_strategy_config(run_id)
-        run_config = _load_run_config(run_id)
+        strategy = await asyncio.to_thread(_load_strategy_config, run_id)
+        run_config = await asyncio.to_thread(_load_run_config, run_id)
         timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
-        trades = _load_trades(run_id, symbol)
-        csv_path = _resolve_csv_path(strategy, symbol, timeframe)
+        trades = await asyncio.to_thread(_load_trades, run_id, symbol)
+        csv_path = await asyncio.to_thread(
+            _resolve_csv_path, strategy, symbol, timeframe
+        )
     except HTTPException as exc:
         yield _sse_event("error", {"message": exc.detail})
         return
 
     if len(trades) < 20:
-        yield _sse_event("error", {"message": f"Too few trades ({len(trades)}) for meaningful discovery"})
+        yield _sse_event(
+            "error",
+            {"message": f"Too few trades ({len(trades)}) for meaningful discovery"},
+        )
         return
 
     entry_times = pd.to_datetime([t["entry_time"] for t in trades])
@@ -535,7 +566,11 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
     loss_mask = pnls < 0
 
     # Load OHLCV data
-    df = load_data_aligned(str(csv_path))
+    try:
+        df = await asyncio.to_thread(load_data_aligned, str(csv_path))
+    except (ValueError, pd.errors.ParserError) as exc:
+        yield _sse_event("error", {"message": f"Invalid data in {csv_path}: {exc}"})
+        return
     if df is None or df.empty:
         yield _sse_event("error", {"message": f"Failed to load data from {csv_path}"})
         return
@@ -548,9 +583,6 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
     end_idx = min(len(df), df.index.searchsorted(last_trade) + 1)
     df = df.iloc[start_idx:end_idx].copy()
 
-    # Pre-initialize registry once before spawning workers
-    _ensure_registry_initialized()
-
     # Build params lookup from the strategy's pipeline config so that
     # indicators already in the pipeline are computed with the same params
     # (producing the same column names the strategy actually uses).
@@ -559,17 +591,21 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
         if isinstance(ind_cfg, dict) and ind_cfg.get("name"):
             pipeline_params[ind_cfg["name"]] = ind_cfg.get("params", {})
 
-    indicator_names = _get_available_indicators()
+    # Also initializes the plugin registry before the workers start.
+    indicator_names = await asyncio.to_thread(_get_available_indicators)
     total_steps = len(indicator_names)
 
-    yield _sse_event("init", {
-        "total_trades": len(trades),
-        "wins": int(win_mask.sum()),
-        "losses": int(loss_mask.sum()),
-        "total_indicators": total_steps,
-        "bars": len(df),
-        "workers": _MAX_WORKERS,
-    })
+    yield _sse_event(
+        "init",
+        {
+            "total_trades": len(trades),
+            "wins": int(win_mask.sum()),
+            "losses": int(loss_mask.sum()),
+            "total_indicators": total_steps,
+            "bars": len(df),
+            "workers": _MAX_WORKERS,
+        },
+    )
 
     # ── Async parallel indicator computation ──
     computed_indicators: list[str] = []
@@ -582,13 +618,19 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
     pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
     tasks: list[asyncio.Task] = []
 
-    async def _compute_safe(name: str) -> tuple[str, pd.DataFrame | None, float, str | None]:
+    async def _compute_safe(
+        name: str,
+    ) -> tuple[str, pd.DataFrame | None, float, str | None]:
         """Run one indicator; always returns (name, result, elapsed, error_msg)."""
         try:
             params = pipeline_params.get(name)
             ind_name, result, elapsed = await asyncio.wait_for(
                 loop.run_in_executor(
-                    pool, _compute_single_indicator, df, name, params,
+                    pool,
+                    _compute_single_indicator,
+                    df,
+                    name,
+                    params,
                 ),
                 timeout=_INDICATOR_TIMEOUT,
             )
@@ -605,77 +647,118 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
             done_count += 1
 
             if err:
-                yield _sse_event("indicator_skip", {
-                    "step": done_count,
-                    "total": total_steps,
-                    "indicator": ind_name,
-                    "reason": err,
-                })
+                yield _sse_event(
+                    "indicator_skip",
+                    {
+                        "step": done_count,
+                        "total": total_steps,
+                        "indicator": ind_name,
+                        "reason": err,
+                    },
+                )
                 continue
 
-            new_cols = [c for c in result.columns if c not in base_cols and c not in df.columns]
+            new_cols = [
+                c for c in result.columns if c not in base_cols and c not in df.columns
+            ]
             if new_cols:
                 all_new_cols[ind_name] = result[new_cols]
                 computed_indicators.append(ind_name)
                 for col in new_cols:
                     indicator_map[col] = ind_name
 
-            yield _sse_event("indicator_done", {
-                "step": done_count,
-                "total": total_steps,
-                "indicator": ind_name,
-                "columns": len(new_cols),
-                "elapsed": round(elapsed, 1),
-            })
+            yield _sse_event(
+                "indicator_done",
+                {
+                    "step": done_count,
+                    "total": total_steps,
+                    "indicator": ind_name,
+                    "columns": len(new_cols),
+                    "elapsed": round(elapsed, 1),
+                },
+            )
 
     finally:
         for task in tasks:
             task.cancel()
         pool.shutdown(wait=False, cancel_futures=True)
 
-    # ── Merge all indicator results at once ──
-    df_full = df
-    if all_new_cols:
-        df_full = pd.concat([df, *all_new_cols.values()], axis=1)
-
-    feature_cols = [c for c in df_full.columns
-                    if c not in base_cols and not c.startswith("_")]
-
-    yield _sse_event("progress", {
-        "step": total_steps,
-        "total": total_steps,
-        "indicator": "Finale Analyse & Kombinationen...",
-    })
-
-    # ── Statistical analysis (single pass) ──
-    sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
-    all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask, indicator_map)
-    direction_results = _analyze_direction(
-        sampled, feature_cols, directions, pnls, win_mask, loss_mask, indicator_map,
-    )
-    combinations = _analyze_combinations(
-        sampled, direction_results, directions, pnls, win_mask, indicator_map,
+    yield _sse_event(
+        "progress",
+        {
+            "step": total_steps,
+            "total": total_steps,
+            "indicator": "Finale Analyse & Kombinationen...",
+        },
     )
 
-    done_payload = {
-        "run_id": run_id,
-        "symbol": symbol,
-        "strategy_name": strategy.get("name", ""),
-        "total_trades": len(trades),
-        "wins": int(win_mask.sum()),
-        "losses": int(loss_mask.sum()),
-        "total_features": len(feature_cols),
-        "analyzed_features": len(all_results),
-        "indicators_computed": computed_indicators,
-        "results": all_results[:100],
-        "direction": direction_results,
-        "combinations": combinations,
-    }
+    def _analyze() -> dict:
+        # ── Merge all indicator results at once ──
+        df_full = df
+        if all_new_cols:
+            df_full = pd.concat([df, *all_new_cols.values()], axis=1)
+
+        # Unshifted signal columns carry the entry bar's own close: not candidate
+        # features for what separates wins from losses at entry.
+        unshifted = {
+            col
+            for ind_name in all_new_cols
+            for col in indicator_signal_columns(ind_name, pipeline_params.get(ind_name))
+        }
+        feature_cols = [
+            c
+            for c in df_full.columns
+            if c not in base_cols and not c.startswith("_") and c not in unshifted
+        ]
+
+        # ── Statistical analysis (single pass) ──
+        sampled = df_full.reindex(
+            entry_times, method="nearest", tolerance=pd.Timedelta("2h")
+        )
+        all_results = _analyze_features(
+            sampled, feature_cols, win_mask, loss_mask, indicator_map
+        )
+        direction_results = _analyze_direction(
+            sampled,
+            feature_cols,
+            directions,
+            pnls,
+            win_mask,
+            loss_mask,
+            indicator_map,
+        )
+        combinations = _analyze_combinations(
+            sampled,
+            direction_results,
+            directions,
+            pnls,
+            win_mask,
+            indicator_map,
+        )
+
+        return {
+            "run_id": run_id,
+            "symbol": symbol,
+            "strategy_name": strategy.get("name", ""),
+            "total_trades": len(trades),
+            "wins": int(win_mask.sum()),
+            "losses": int(loss_mask.sum()),
+            "total_features": len(feature_cols),
+            "analyzed_features": len(all_results),
+            "indicators_computed": computed_indicators,
+            "results": all_results[:100],
+            "direction": direction_results,
+            "combinations": combinations,
+        }
+
+    done_payload = await asyncio.to_thread(_analyze)
 
     try:
-        _save_discovery_cache(run_id, symbol, done_payload)
+        await asyncio.to_thread(_save_discovery_cache, run_id, symbol, done_payload)
     except Exception as e:
-        log.warning("Failed to cache discovery results for %s/%s: %s", run_id, symbol, e)
+        log.warning(
+            "Failed to cache discovery results for %s/%s: %s", run_id, symbol, e
+        )
 
     yield _sse_event("done", done_payload)
 
@@ -687,6 +770,10 @@ async def get_feature_discovery(run_id: str, symbol: str, force: bool = False):
     Results are cached in test_results/{run_id}/discovery/{symbol}.json.
     Pass ?force=true to recompute even if a cache exists.
     """
+    # Validate before streaming starts: an error inside the generator can no
+    # longer become an HTTP status.
+    validate_id(run_id, "run_id")
+    validate_id(symbol, "symbol")
     return StreamingResponse(
         _discovery_stream(run_id, symbol, force=force),
         media_type="text/event-stream",

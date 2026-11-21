@@ -46,7 +46,11 @@ def test_ratio_only_where_the_inner_pnl_is_positive():
 def test_a_near_zero_inner_pnl_does_not_dominate_the_mean():
     """The mean weights each fold's ratio by its inner PnL: sum(test) / sum(inner)."""
     bias = fold_bias_ratios([_fold(10.0, 10.0), _fold(10.0, 10.0), _fold(0.1, 5.0)])
-    assert bias["bias_ratios"] == [1.0, 1.0, 50.0]  # the fold itself still shows its ratio
+    assert bias["bias_ratios"] == [
+        1.0,
+        1.0,
+        50.0,
+    ]  # the fold itself still shows its ratio
     assert bias["mean_bias_ratio"] == pytest.approx(25.0 / 20.1)
     check = check_asset_bias(
         _result(bias["bias_ratios"], bias["mean_bias_ratio"], 0), verbose=False
@@ -60,7 +64,11 @@ def test_a_negative_test_pnl_keeps_its_ratio():
 
 def test_no_positive_inner_pnl_leaves_the_mean_undefined():
     bias = fold_bias_ratios([_fold(-1.0, 4.0), _fold(0.0, 0.0)])
-    assert bias == {"bias_ratios": [], "mean_bias_ratio": None, "folds_without_bias_ratio": 2}
+    assert bias == {
+        "bias_ratios": [],
+        "mean_bias_ratio": None,
+        "folds_without_bias_ratio": 2,
+    }
 
 
 def test_non_finite_pnl_is_excluded_from_bias_ratios():
@@ -117,7 +125,9 @@ def test_a_run_with_inner_pnl_at_or_below_zero_records_no_ratio(monkeypatch, tmp
     monkeypatch.setattr(symbol_harness, "fold_result", losing_inner)
     patch_development(monkeypatch, WINNING)
     sym_dir = run_inline(monkeypatch, tmp_path) / "grid_details" / "EURUSD"
-    walk_forward = json.loads((sym_dir / "fold_results.json").read_text())["walk_forward"]
+    walk_forward = json.loads((sym_dir / "fold_results.json").read_text())[
+        "walk_forward"
+    ]
     assert walk_forward["bias_ratios"] == []
     assert walk_forward["mean_bias_ratio"] is None
     assert walk_forward["folds_without_bias_ratio"] == walk_forward["n_folds"] > 0
@@ -131,3 +141,38 @@ def test_an_undefined_mean_prints_n_a_on_the_ok_branch(capsys):
 
 def test_fold_bias_ratios_is_exported():
     assert "fold_bias_ratios" in bias_checks.__all__
+
+
+def test_a_test_pnl_far_below_the_inner_pnl_is_flagged():
+    """Selection optimism shows as a LOW test/inner ratio; only >1.5x used to be flagged."""
+    check = check_asset_bias(_result([0.3, 0.4], 0.35, 0), verbose=False)
+    assert check["bias_check"] == "critical"
+    assert any("overstates" in issue for issue in check["issues"])
+
+
+def test_a_moderately_low_ratio_is_a_warning_and_a_weak_fold_is_listed():
+    check = check_asset_bias(_result([0.6, 0.65, 0.1], 0.6, 0), verbose=False)
+    assert check["bias_check"] == "warning"
+    assert any("optimistic" in w for w in check["warnings"])
+    assert any("< 0.25x of their inner PnL" in w for w in check["warnings"])
+
+
+def test_a_ratio_around_one_stays_ok():
+    assert (
+        check_asset_bias(_result([0.9, 1.1], 1.0, 0), verbose=False)["bias_check"]
+        == "ok"
+    )
+
+
+def test_systematic_check_warns_on_a_low_mean_instead_of_counting_it_ok():
+    check = check_systematic_bias([_result([0.3], 0.3, 0)], verbose=False)
+    assert check["ok_assets"] == 0
+    assert check["warned_assets"] == 1
+
+
+def test_bias_output_says_the_inner_cv_models_are_reduced(capsys):
+    check_asset_bias(_result([2.5, 2.4, 2.6, 2.5, 2.5, 2.5], 2.5, 0))
+    out = capsys.readouterr().out
+    assert "BIAS DETECTED" in out
+    assert "inner CV trains reduced models" in out
+    assert "half the trees" in out

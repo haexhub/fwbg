@@ -1,6 +1,8 @@
 """
 BaseIndicator - Abstrakte Basisklasse für Indicator-Plugins.
 """
+
+import inspect
 from abc import ABC, abstractmethod
 from typing import List, Dict, Union, TYPE_CHECKING
 import numpy as np
@@ -202,11 +204,24 @@ class BaseIndicator(BasePlugin, ABC):
 
     def get_signal_columns(self, params=None) -> List[str]:
         """
-        Gibt Liste der Signal-Spalten zurück (diskrete Werte: -1, 0, 1).
+        Gibt Liste der unverschobenen Entscheidungs-Spalten zurück. Sie können
+        diskrete Events (z.B. -1, 0, 1) oder kontinuierliche Messwerte enthalten;
+        ``get_continuous_signal_columns()`` kennzeichnet letztere für den Chart.
 
-        Signal-Spalten repräsentieren diskrete Zustände/Events,
-        keine kontinuierlichen Werte. Sie werden im Chart als
-        Histogramm dargestellt statt als Linie.
+        Zeile ``i`` einer Signal-Spalte beschreibt die Entscheidung am Close von
+        Bar ``i`` (Regeln in ``signal_rules`` / Exit-Spalten; Entry am nächsten
+        Open bei ``entry_delay=1``, am Close des Signal-Bars bei ``entry_delay=0``).
+
+        Konsequenzen:
+        - Signal-Spalten gehören NICHT in den ML-Feature-Pool (sie wären gegenüber
+          der 1-Bar-Konvention um einen Bar im Vorsprung). Der Pool schließt sie
+          standardmäßig aus; ``signal_columns_as_features`` nimmt stattdessen um
+          einen Bar verschobene Kopien ``<col>_prev`` auf.
+        - Spalten, die mit ``shift_features()`` verschoben sind, gehören hier nicht
+          hinein, auch wenn ihre Werte diskret sind.
+        - Spalten, die nur vom Zeitstempel und einem im Voraus feststehenden
+          Kalender abhängen, dürfen hier stehen (Entry-Regeln, Chart-Ausrichtung),
+          müssen dann aber zusätzlich in ``get_calendar_columns()`` stehen.
 
         Args:
             params: Optionale Indicator-Parameter (siehe get_feature_columns).
@@ -215,6 +230,57 @@ class BaseIndicator(BasePlugin, ABC):
             Liste der Signal-Spaltennamen, oder leere Liste
         """
         return self._signal_columns
+
+    def get_continuous_signal_columns(self, params=None) -> List[str]:
+        """Return signal columns whose values are continuous rather than events.
+
+        These columns remain unshifted decision inputs, but charts must render
+        them as lines and must not turn value changes into signal markers.
+        """
+        return []
+
+    def get_calendar_columns(self, params=None) -> List[str]:
+        """
+        Unshifted Spalten, die nur vom Zeitstempel und einem im Voraus bekannten
+        Kalender abhängen (kein Preis- und kein Close-Input).
+
+        Teilmenge von ``get_signal_columns()``. Der Wert für Bar ``i`` steht schon
+        vor dem Open von Bar ``i`` fest, ist also kein Lookahead und bleibt im
+        ML-Feature-Pool. Eine Spalte, die den Preis des Bars selbst liest, gehört
+        nicht hierher.
+
+        Args:
+            params: Optionale Indicator-Parameter (siehe get_feature_columns).
+
+        Returns:
+            Liste der Kalender-Spaltennamen, oder leere Liste
+        """
+        return []
+
+    def get_unshifted_columns(self, params=None) -> List[str]:
+        """Columns that carry the value of their own bar (not ``shift_features``).
+
+        Row ``i`` of such a column holds what is known at the close of bar ``i``
+        (decision columns) or before the open of bar ``i`` (calendar columns); every
+        other column is shifted by one bar. The chart API uses this list to place
+        values on the bar whose close produced them.
+
+        Default: ``get_signal_columns(params)`` plus ``get_calendar_columns(params)``,
+        the single definition of "unshifted". Override only to add unshifted columns
+        that are neither (e.g. structural levels), and extend ``super()``.
+
+        Args:
+            params: Optional indicator parameters (see ``get_feature_columns``).
+
+        Returns:
+            Names of the unshifted columns without duplicates.
+        """
+        found: Dict[str, None] = {}
+        for method in (self.get_signal_columns, self.get_calendar_columns):
+            takes_params = len(inspect.signature(method).parameters) > 0
+            for col in method(params) if takes_params else method():
+                found.setdefault(col, None)
+        return list(found)
 
     def get_plot_columns(self) -> List[str]:
         """

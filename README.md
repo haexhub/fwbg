@@ -16,7 +16,7 @@ The system is built on a **modular plugin architecture**: every pipeline phase �
 
 - **Numba-Accelerated Simulation** — JIT-compiled trade simulation with parallel processing for fast grid-search runs.
 
-- **Core + Premium Packages** — Open-source core indicators (trend, momentum, volatility). Premium package with regime detection, macro data, COT positioning, ATR-based exits, feature selection.
+- **Core + Optional Premium Package** — Open-source core indicators (trend, momentum, volatility). Additional plugins (regime detection, macro data, COT positioning, ATR-based exits, feature selection) come in an optional `fwbg-premium` package that is installed separately; fwbg runs without it and picks it up automatically via the `fwbg.plugin_packages` entry point when present.
 
 - **Live-Trading Ready** — Broker adapter system for live execution (IG Markets etc.).
 
@@ -33,8 +33,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Optional: Premium Plugins
-pip install -e packages/fwbg-premium
+# Optional: the separately installed fwbg-premium plugin package is discovered
+# automatically via the `fwbg.plugin_packages` entry point once it is installed
+# into the same environment (pip install -e <path to the fwbg-premium checkout>)
 ```
 
 ### Optimizer
@@ -86,7 +87,16 @@ registration), so it **fails closed**: startup aborts unless either
 `FWBG_API_KEY` is set (X-API-Key enforced on every `/api` request) or
 `FWBG_ALLOW_UNAUTHENTICATED_API=1` is explicitly set for local-only use. Always
 set `FWBG_API_KEY` when binding to `0.0.0.0`. Clients (fwbg-agents) send the
-same key via the `X-API-Key` header.
+same key via the `X-API-Key` header. Every route except `/docs`, `/redoc` and
+`/openapi.json` requires the key; CORS preflights are answered before the key
+check. `docker-compose.yml` has no unauthenticated mode and refuses to start
+without `FWBG_API_KEY` (see `.env.example`).
+
+`POST /api/plugins` imports and executes uploaded Python in the API process and
+stores it where the bot loads it, so it is disabled (403) unless the server sets
+`FWBG_ALLOW_PLUGIN_UPLOAD=1`. Secrets in datasource configs (`api_key`,
+credentials in `connection_string`, sensitive headers) are returned masked as
+`********`; sending the mask back in a `PUT` keeps the stored value.
 
 Interactive docs available at `http://localhost:8420/docs` after startup.
 
@@ -97,7 +107,8 @@ Interactive docs available at `http://localhost:8420/docs` after startup.
 | `FWBG_STRATEGIES_DIR` | `strategies/configs` | Strategy JSON directory |
 | `FWBG_TEST_RESULTS_DIR` | `test_results` | Results directory |
 | `FWBG_API_KEY` | _(unset)_ | Required unless dev bypass is set; enforced as `X-API-Key` on `/api`. |
-| `FWBG_ALLOW_UNAUTHENTICATED_API` | _(unset)_ | Set to `1` for local-only dev to run without a key. |
+| `FWBG_ALLOW_UNAUTHENTICATED_API` | _(unset)_ | Set to `1` for local-only dev to run without a key. Not used by `docker-compose.yml`. |
+| `FWBG_ALLOW_PLUGIN_UPLOAD` | _(unset)_ | Set to `1` to enable `POST /api/plugins` (executes uploaded code). Off by default. |
 | `FWBG_MAX_CONCURRENT_RUNS` | `1` | Concurrent backtest subprocesses. Raise only with enough RAM/CPU and callers that tolerate parallel runs; fwbg-agents expects `429` when the slot is busy and waits. |
 
 **Endpoints:**
@@ -248,12 +259,12 @@ fwbg/
 │   └── adapters/                 # Broker & data source adapters
 │
 ├── packages/
-│   └── fwbg-premium/             # Premium plugins (separate pip package)
-│       ├── indicators/           # regime, structure, risk, distribution, dynamics, support_resistance, ...
-│       ├── preprocessing/        # fractional_diff
-│       ├── feature_selection/    # boruta, plateau, stability, correlation_filter
-│       ├── exit_strategies/      # atr_based
-│       └── data_loading/         # macro_data, cot_positioning
+│   ├── fwbg-sdk/                 # Plugin base classes, types, enums
+│   ├── fwbg-broker-ig/           # IG Markets broker adapter
+│   ├── fwbg-broker-template/     # Template for new broker adapters
+│   └── fwbg-mcp/                 # MCP server
+│
+│   (The optional fwbg-premium plugin package is installed separately.)
 │
 ├── strategies/                   # Strategy configurations (JSON)
 ├── data/                         # Historical data (CSV)
@@ -263,6 +274,9 @@ fwbg/
 ---
 
 ## Documentation
+
+### Operations
+- [Deployment](docs/deployment.md) — Container user, volume ownership, plugin upload flag
 
 ### Architecture & Plugin System
 - [Architecture & Plugin System](docs/architecture.md) — Plugin lifecycle, discovery, naming, PipelineRunner

@@ -4,6 +4,7 @@ MACD (Moving Average Convergence Divergence) Indicator.
 MACD = 12-EMA - 26-EMA. Signal = 9-EMA of MACD. Histogram = MACD - Signal.
 Alle Werte werden durch Close normalisiert.
 """
+
 from typing import List
 
 import numpy as np
@@ -11,6 +12,17 @@ import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
+
+
+def _sign_flips(series: pd.Series) -> pd.Series:
+    """1.0 where the sign differs from the previous bar, 0.0 where it does not.
+
+    NaN until the series and its predecessor are both valid (the MACD histogram
+    needs ``slow_period + signal_period - 1`` bars), not a flip on every warm-up row.
+    """
+    previous = series.shift(1)
+    flips = (np.sign(series) != np.sign(previous)).astype(float)
+    return flips.where(series.notna() & previous.notna())
 
 
 @register_indicator("macd")
@@ -24,11 +36,11 @@ class MACDIndicator(BaseIndicator):
     - macd_hist: Histogramm (MACD - Signal), normalisiert
     - macd_above_zero: Vorzeichen der MACD-Linie (+1/-1)
     - macd_dist_zero: Absoluter Abstand von Null, normalisiert
-    - macd_hist_flip: 1 wenn Histogramm Vorzeichen wechselt
+    - macd_hist_flip: 1 wenn Histogramm Vorzeichen wechselt (NaN im Warm-up)
     """
 
     name = "macd"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def compute(
         self,
@@ -38,6 +50,17 @@ class MACDIndicator(BaseIndicator):
         signal_period: int = 9,
         **params,
     ) -> pd.DataFrame:
+        if fast_period < 1 or signal_period < 1:
+            raise ValueError(
+                f"MACD periods must be >= 1, got fast_period={fast_period}, "
+                f"signal_period={signal_period}"
+            )
+        if fast_period >= slow_period:
+            raise ValueError(
+                f"MACD fast_period ({fast_period}) must be smaller than "
+                f"slow_period ({slow_period})"
+            )
+
         macd_ind = ta.trend.MACD(
             df["C"],
             window_fast=fast_period,
@@ -53,7 +76,7 @@ class MACDIndicator(BaseIndicator):
             "macd_line": safe_divide(macd_line, df["C"]),
             "macd_above_zero": np.sign(macd_line),
             "macd_dist_zero": safe_divide(macd_line.abs(), df["C"]),
-            "macd_hist_flip": (np.sign(macd_hist) != np.sign(macd_hist.shift(1))).astype(float),
+            "macd_hist_flip": _sign_flips(macd_hist),
         }
 
         features_df = shift_features(features, df.index)
@@ -61,12 +84,13 @@ class MACDIndicator(BaseIndicator):
 
     def get_feature_columns(self, params=None) -> List[str]:
         return [
-            "macd_hist", "macd_signal", "macd_line",
-            "macd_above_zero", "macd_dist_zero", "macd_hist_flip",
+            "macd_hist",
+            "macd_signal",
+            "macd_line",
+            "macd_above_zero",
+            "macd_dist_zero",
+            "macd_hist_flip",
         ]
-
-    def get_signal_columns(self, params=None) -> List[str]:
-        return ["macd_above_zero", "macd_hist_flip"]
 
     def get_overlay_columns(self, params=None) -> List[str]:
         return []

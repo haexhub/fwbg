@@ -17,6 +17,7 @@ Behaviour:
 
 All tests are offline (mocked adapter, ``tmp_path`` for the writer base dir).
 """
+
 from __future__ import annotations
 
 import json
@@ -63,7 +64,10 @@ class _StubBrokerAdapter(BrokerAdapter):
         # Keep the configured minimum lot within the normal risk budget.
         self._account = account or AccountInfo(balance=100_000.0, equity=100_000.0)
         self._order_result = order_result or OrderResult(
-            success=True, status=OrderStatus.FILLED, fill_price=1.0823, filled_quantity=1000.0
+            success=True,
+            status=OrderStatus.FILLED,
+            fill_price=1.0823,
+            filled_quantity=1000.0,
         )
 
     @property
@@ -78,7 +82,9 @@ class _StubBrokerAdapter(BrokerAdapter):
         self._connected = False
         return True
 
-    def get_historical_bars(self, symbol, timeframe=None, limit=1000, start=None, end=None):
+    def get_historical_bars(
+        self, symbol, timeframe=None, limit=1000, start=None, end=None
+    ):
         # Provide enough OHLC rows so _execute_signal's ATR computation can run.
         idx = pd.date_range("2024-01-01", periods=50, freq="h")
         return pd.DataFrame(
@@ -112,6 +118,10 @@ class _StubBrokerAdapter(BrokerAdapter):
         """The offline test broker exposes a known-empty close history."""
         return []
 
+    def get_value_per_point(self, symbol, point_value) -> Optional[float]:
+        """The offline test broker is quoted 1:1 in the account currency."""
+        return 1.0
+
     def get_broker_symbol(self, symbol) -> Optional[str]:
         return str(symbol)
 
@@ -121,7 +131,9 @@ class _StubBrokerAdapter(BrokerAdapter):
 # -----------------------------------------------------------------------------
 
 
-def _make_assets_config(strategy_slug: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+def _make_assets_config(
+    strategy_slug: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
     cfg: Dict[str, Any] = {
         "features": ["rsi_14"],
         "conf_thresh": 0.6,
@@ -235,7 +247,9 @@ def test_execute_signal_spread_lookup_failure_defaults_to_none(tmp_path, monkeyp
     bot.ohlc_cache["EURUSD"] = bot.adapter.get_historical_bars("EURUSD")
 
     cfg = bot.assets["EURUSD"]
-    bot._execute_signal("EURUSD", OrderSide.BUY, probability=0.7, cfg=cfg)  # must not raise
+    bot._execute_signal(
+        "EURUSD", OrderSide.BUY, probability=0.7, cfg=cfg
+    )  # must not raise
 
     trades_file = tmp_path / "account-trades" / "foo" / "trades.jsonl"
     entry = json.loads(trades_file.read_text().strip().splitlines()[0])
@@ -299,7 +313,10 @@ def test_status_json_equity_curve_bounded_to_200(tmp_path):
     base_ts = pd.Timestamp("2024-01-01T00:00:00Z")
     for i in range(500):
         bot._equity_curve.append(
-            {"t": (base_ts + pd.Timedelta(minutes=i)).isoformat(), "equity": 10_000.0 + i}
+            {
+                "t": (base_ts + pd.Timedelta(minutes=i)).isoformat(),
+                "equity": 10_000.0 + i,
+            }
         )
 
     first_equity = bot._equity_curve[0]["equity"]
@@ -307,7 +324,9 @@ def test_status_json_equity_curve_bounded_to_200(tmp_path):
 
     bot._write_status("RUNNING")
 
-    status_data = json.loads((tmp_path / "account-trades" / "foo" / "status.json").read_text())
+    status_data = json.loads(
+        (tmp_path / "account-trades" / "foo" / "status.json").read_text()
+    )
     sample = status_data["equity_curve_sample"]
     assert len(sample) <= 200
     # First + last preserved (under the FIRST/LAST guarantee).
@@ -316,7 +335,10 @@ def test_status_json_equity_curve_bounded_to_200(tmp_path):
     # via adapter.get_account_info().equity. Either the original last is in
     # the sample, or the new last (from _write_status's own append) is —
     # but the sample's last must reflect a real data point.
-    assert sample[-1]["equity"] >= last_equity or sample[-1]["equity"] == bot._equity_curve[-1]["equity"]
+    assert (
+        sample[-1]["equity"] >= last_equity
+        or sample[-1]["equity"] == bot._equity_curve[-1]["equity"]
+    )
 
 
 def test_positions_json_includes_sl_tp_from_adapter(tmp_path):
@@ -363,10 +385,12 @@ def test_write_failures_are_logged_not_raised(tmp_path, caplog):
         # Must not raise.
         bot._write_status("RUNNING")
 
-    warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("telemetry" in m.lower() or "write" in m.lower() for m in warning_messages), (
-        f"Expected a WARNING about the failed write. Got: {warning_messages}"
-    )
+    warning_messages = [
+        r.message for r in caplog.records if r.levelno >= logging.WARNING
+    ]
+    assert any(
+        "telemetry" in m.lower() or "write" in m.lower() for m in warning_messages
+    ), f"Expected a WARNING about the failed write. Got: {warning_messages}"
 
 
 def test_position_dataclass_accepts_optional_sl_tp_current_price():

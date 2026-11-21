@@ -1,4 +1,5 @@
 """Tests for Higuchi Fractal Dimension indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -79,8 +80,12 @@ class TestFeatureColumns:
 
     def test_all_columns_present(self, indicator, random_walk_df):
         result = indicator.compute(random_walk_df, windows=[50])
-        for suffix in ["higuchi_50", "higuchi_change_50",
-                       "complexity_ratio_50", "regime_50"]:
+        for suffix in [
+            "higuchi_50",
+            "higuchi_change_50",
+            "complexity_ratio_50",
+            "regime_50",
+        ]:
             col = f"fd_{suffix}"
             assert col in result.columns, f"Missing: {col}"
 
@@ -113,8 +118,12 @@ class TestNoLookahead:
 
     def test_first_row_is_nan(self, indicator, random_walk_df):
         result = indicator.compute(random_walk_df, windows=[50])
-        for col in ["fd_higuchi_50", "fd_higuchi_change_50",
-                     "fd_complexity_ratio_50", "fd_regime_50"]:
+        for col in [
+            "fd_higuchi_50",
+            "fd_higuchi_change_50",
+            "fd_complexity_ratio_50",
+            "fd_regime_50",
+        ]:
             assert pd.isna(result[col].iloc[0]), f"{col} first row should be NaN"
 
     def test_shift_by_one(self, indicator, random_walk_df):
@@ -276,6 +285,7 @@ class TestPluginIntegration:
 
     def test_plugin_importable(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:fractal_dimension")
@@ -283,6 +293,7 @@ class TestPluginIntegration:
 
     def test_benefits_from_stationary_false(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:fractal_dimension")
@@ -297,4 +308,75 @@ class TestPluginIntegration:
 
     def test_name_and_version(self, indicator):
         assert indicator.name == "fractal_dimension"
-        assert indicator.version == "1.0.0"
+        assert indicator.version == "1.1.0"
+
+
+# ---------------------------------------------------------------------------
+# Regime dead band calibration and windows-aware columns
+# ---------------------------------------------------------------------------
+
+
+class TestRegimeCalibration:
+    @staticmethod
+    def _rw_regime_fraction(window, k_max, n_paths=300, seed=11):
+        rng = np.random.default_rng(seed)
+        ind = _fd.FractalDimensionIndicator()
+        nonzero = 0
+        for _ in range(n_paths):
+            # window + 2 closes: first valid fd row is at bar window-1, we read
+            # the last (shifted) row which holds the fd of the full window
+            close = 100 + np.cumsum(rng.normal(0, 1, window + 1))
+            out = ind.compute(_make_ohlc(close), windows=[window], k_max=k_max)
+            r = out[f"fd_regime_{window}"].iloc[-1]
+            assert not np.isnan(r)
+            nonzero += r != 0.0
+        return nonzero / n_paths
+
+    @pytest.mark.parametrize("window", [50, 100])
+    def test_random_walk_rarely_leaves_dead_band(self, window):
+        frac = self._rw_regime_fraction(window, 10)
+        # target ~5 %; allow sampling noise and calibration error. A fixed
+        # 1.4..1.6 band gives ~43 % at window=50 and ~25 % at window=100.
+        assert frac < 0.12, f"RW labelled trend/MR in {frac:.1%} of windows"
+
+    def test_rw_fd_std_matches_simulation(self):
+        rng = np.random.default_rng(5)
+        for window in (50, 200):
+            vals = [
+                _fd._higuchi_fd(np.cumsum(rng.normal(size=window)), 10)
+                for _ in range(400)
+            ]
+            assert _fd.rw_fd_std(window, 10) == pytest.approx(np.std(vals), rel=0.2)
+            assert np.mean(vals) == pytest.approx(1.5, abs=0.03)
+
+    def test_band_is_exact_function_of_estimator_noise(self, indicator, random_walk_df):
+        out = indicator.compute(random_walk_df, windows=[50], k_max=10, regime_z=1.96)
+        fd = out["fd_higuchi_50"]
+        band = 1.96 * _fd.rw_fd_std(50, 10)
+        expected = pd.Series(
+            np.where(
+                fd.isna(),
+                np.nan,
+                np.where(fd < 1.5 - band, -1.0, np.where(fd > 1.5 + band, 1.0, 0.0)),
+            ),
+            index=fd.index,
+        )
+        pd.testing.assert_series_equal(out["fd_regime_50"], expected, check_names=False)
+
+
+class TestWindowsParamColumns:
+    def test_get_feature_columns_honours_windows(self, indicator):
+        cols = indicator.get_feature_columns({"windows": [30]})
+        assert cols == [
+            "fd_higuchi_30",
+            "fd_higuchi_change_30",
+            "fd_complexity_ratio_30",
+            "fd_regime_30",
+        ]
+        # fd_regime_* go through shift_features: not unshifted signal columns.
+        assert indicator.get_signal_columns({"windows": [30, 60]}) == []
+
+    def test_columns_match_compute_for_custom_windows(self, indicator, random_walk_df):
+        out = indicator.compute(random_walk_df, windows=[30, 60])
+        for col in indicator.get_feature_columns({"windows": [30, 60]}):
+            assert col in out.columns

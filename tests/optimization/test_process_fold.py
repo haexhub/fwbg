@@ -5,6 +5,7 @@ NameErrors, wrong variable ordering, and broken progress reporting.
 Mock only external dependencies (XGBoost, Feature Selection),
 use real config objects for everything else.
 """
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -21,20 +22,23 @@ def _make_ohlc_df(n=800, seed=42):
     rng = np.random.default_rng(seed)
     price = 1.1 + np.cumsum(rng.normal(0, 0.0005, n))
     atr = np.abs(rng.normal(0.001, 0.0003, n))
-    df = pd.DataFrame({
-        "O": price,
-        "H": price + np.abs(rng.normal(0.0005, 0.0002, n)),
-        "L": price - np.abs(rng.normal(0.0005, 0.0002, n)),
-        "C": price + rng.normal(0, 0.0003, n),
-        "_atr": atr,
-        "_regime": np.full(n, 7, dtype=np.int8),
-        "feat1": rng.standard_normal(n),
-        "feat2": rng.standard_normal(n),
-        "feat3": rng.standard_normal(n),
-        "feat4": rng.standard_normal(n),
-        "feat5": rng.standard_normal(n),
-        "feat6": rng.standard_normal(n),
-    }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+    df = pd.DataFrame(
+        {
+            "O": price,
+            "H": price + np.abs(rng.normal(0.0005, 0.0002, n)),
+            "L": price - np.abs(rng.normal(0.0005, 0.0002, n)),
+            "C": price + rng.normal(0, 0.0003, n),
+            "_atr": atr,
+            "_regime": np.full(n, 7, dtype=np.int8),
+            "feat1": rng.standard_normal(n),
+            "feat2": rng.standard_normal(n),
+            "feat3": rng.standard_normal(n),
+            "feat4": rng.standard_normal(n),
+            "feat5": rng.standard_normal(n),
+            "feat6": rng.standard_normal(n),
+        },
+        index=pd.date_range("2020-01-01", periods=n, freq="h"),
+    )
     return df
 
 
@@ -54,9 +58,7 @@ def _make_fold(df, fold_id=0, train_ratio=0.7):
 
 def _make_ctx(regime_conditions=None, **overrides):
     """Create a minimal SimulationContext for testing."""
-    regime_grid = RegimeFilterGridConfig(
-        condition_grids=regime_conditions or []
-    )
+    regime_grid = RegimeFilterGridConfig(condition_grids=regime_conditions or [])
     defaults = dict(
         symbol="TESTUSD",
         asset_class="FOREX",
@@ -64,10 +66,18 @@ def _make_ctx(regime_conditions=None, **overrides):
         point=0.0001,
         min_trades=5,
         exit_strategies=[
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.5, 0.55]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.5, 0.55]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.5, 0.55]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.5, 0.55]),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.5, 0.55]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.5, 0.55]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.5, 0.55]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.5, 0.55]
+            ),
         ],
         long_enabled=True,
         short_enabled=True,
@@ -99,11 +109,19 @@ class TestProcessSingleFoldIntegration:
             "fwbg.optimization.process_fold.select_features",
             return_value=(features, features),
         )
+
         # Mock run_grid_search to return dummy candidates
-        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
-                             sym, progress_callback=None, inner_df=None,
-                             preselected_features_long=None,
-                             preselected_features_short=None):
+        def fake_grid_search(
+            full_pool,
+            inner_folds,
+            ctx,
+            regime_config,
+            sym,
+            progress_callback=None,
+            inner_df=None,
+            preselected_features_long=None,
+            preselected_features_short=None,
+        ):
             # Simulate progress
             n = ctx.total_grid_combinations()
             if progress_callback:
@@ -154,9 +172,15 @@ class TestProcessSingleFoldIntegration:
         mock_meta = patch("fwbg.optimization.process_fold.report_meta")
         mock_progress = patch("fwbg.optimization.process_fold.report_progress")
 
-        with mock_select, mock_grid as m_grid, mock_holdout, \
-             mock_cv, mock_phase as m_phase, \
-             mock_meta as m_meta, mock_progress as m_progress:
+        with (
+            mock_select,
+            mock_grid as m_grid,
+            mock_holdout,
+            mock_cv,
+            mock_phase as m_phase,
+            mock_meta as m_meta,
+            mock_progress as m_progress,
+        ):
             result, grid_results = process_single_fold(
                 fold=fold,
                 fold_idx=fold_idx,
@@ -197,8 +221,13 @@ class TestProcessSingleFoldIntegration:
         _, _, _, _, m_meta, _ = self._run_fold(
             fold_idx=0,
             regime_conditions=[
-                {"column": "feat1", "operator": ">=", "values": [None, 0.5],
-                 "directions": 6, "else_directions": 0},
+                {
+                    "column": "feat1",
+                    "operator": ">=",
+                    "values": [None, 0.5],
+                    "directions": 6,
+                    "else_directions": 0,
+                },
             ],
         )
         # Find the call with regime_combos
@@ -213,8 +242,13 @@ class TestProcessSingleFoldIntegration:
         """With 2 regime combos, run_grid_search should be called 2x."""
         _, _, m_grid, _, _, _ = self._run_fold(
             regime_conditions=[
-                {"column": "feat1", "operator": ">=", "values": [None, 0.5],
-                 "directions": 6, "else_directions": 0},
+                {
+                    "column": "feat1",
+                    "operator": ">=",
+                    "values": [None, 0.5],
+                    "directions": 6,
+                    "else_directions": 0,
+                },
             ],
         )
         assert m_grid.call_count == 2
@@ -234,8 +268,13 @@ class TestProcessSingleFoldIntegration:
         """Grid progress should be monotonically increasing across regime combos."""
         _, _, _, _, _, m_progress = self._run_fold(
             regime_conditions=[
-                {"column": "feat1", "operator": ">=", "values": [None, 0.5],
-                 "directions": 6, "else_directions": 0},
+                {
+                    "column": "feat1",
+                    "operator": ">=",
+                    "values": [None, 0.5],
+                    "directions": 6,
+                    "else_directions": 0,
+                },
             ],
         )
 
@@ -248,14 +287,19 @@ class TestProcessSingleFoldIntegration:
             for i in range(1, len(grid_positions)):
                 assert grid_positions[i] >= grid_positions[i - 1], (
                     f"Grid progress jumped backwards at index {i}: "
-                    f"{grid_positions[i-1]} -> {grid_positions[i]}"
+                    f"{grid_positions[i - 1]} -> {grid_positions[i]}"
                 )
 
     def test_grid_total_includes_regime_multiplier(self):
         """grid_total in progress reports should include regime combo count."""
         regime_conditions = [
-            {"column": "feat1", "operator": ">=", "values": [None, 0.5],
-             "directions": 6, "else_directions": 0},
+            {
+                "column": "feat1",
+                "operator": ">=",
+                "values": [None, 0.5],
+                "directions": 6,
+                "else_directions": 0,
+            },
         ]
         ctx = _make_ctx(regime_conditions=regime_conditions)
         base_combos = ctx.total_grid_combinations()  # 2 TP * 2 SL = 4
@@ -282,16 +326,29 @@ class TestProcessSingleFoldIntegration:
         fold = _make_fold(df, fold_id=0)
         ctx = _make_ctx()
 
-        with patch("fwbg.optimization.process_fold.select_features", return_value=(None, None)), \
-             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={"inner_folds": []}), \
-             patch("fwbg.optimization.process_fold.report_phase"), \
-             patch("fwbg.optimization.process_fold.report_meta"), \
-             patch("fwbg.optimization.process_fold.report_progress"):
+        with (
+            patch(
+                "fwbg.optimization.process_fold.select_features",
+                return_value=(None, None),
+            ),
+            patch(
+                "fwbg.optimization.process_fold.nested_cv_split",
+                return_value={"inner_folds": []},
+            ),
+            patch("fwbg.optimization.process_fold.report_phase"),
+            patch("fwbg.optimization.process_fold.report_meta"),
+            patch("fwbg.optimization.process_fold.report_progress"),
+        ):
             result, grid_results = process_single_fold(
-                fold=fold, fold_idx=0, n_folds=8,
-                fold_indicators=[], precomputed_raw_df=None,
+                fold=fold,
+                fold_idx=0,
+                n_folds=8,
+                fold_indicators=[],
+                precomputed_raw_df=None,
                 preprocessing_configs=None,
-                ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx,
+                sym="TEST",
+                total_indicators=6,
             )
 
         assert result is None
@@ -301,8 +358,13 @@ class TestProcessSingleFoldIntegration:
         """With multiple regime combos, phase messages should show R{n}/{total}."""
         _, _, _, m_phase, _, _ = self._run_fold(
             regime_conditions=[
-                {"column": "feat1", "operator": ">=", "values": [None, 0.5],
-                 "directions": 6, "else_directions": 0},
+                {
+                    "column": "feat1",
+                    "operator": ">=",
+                    "values": [None, 0.5],
+                    "directions": 6,
+                    "else_directions": 0,
+                },
             ],
         )
 
@@ -317,7 +379,10 @@ class TestHoldoutUsesWinningCandidateParams:
     """Verify that holdout evaluation uses the winning candidate's
     model_hyperparameters and exit_modifier_params, not the base ctx."""
 
-    VARIANT_HP = {"signal_column_long": "winner_long", "signal_column_short": "winner_short"}
+    VARIANT_HP = {
+        "signal_column_long": "winner_long",
+        "signal_column_short": "winner_short",
+    }
 
     def test_holdout_receives_candidate_model_hyperparameters(self):
         """evaluate_on_holdout must be called with ctx containing the
@@ -338,10 +403,17 @@ class TestHoldoutUsesWinningCandidateParams:
         ctx = _make_ctx(model_hyperparameters=base_hp)
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
-        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
-                             sym, progress_callback=None, inner_df=None,
-                             preselected_features_long=None,
-                             preselected_features_short=None):
+        def fake_grid_search(
+            full_pool,
+            inner_folds,
+            ctx,
+            regime_config,
+            sym,
+            progress_callback=None,
+            inner_df=None,
+            preselected_features_long=None,
+            preselected_features_short=None,
+        ):
             n = ctx.total_grid_combinations()
             if progress_callback:
                 for i in range(1, n + 1):
@@ -366,47 +438,82 @@ class TestHoldoutUsesWinningCandidateParams:
         train_df = fold.train_df
         split = len(train_df) // 2
 
-        with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
-             patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
-             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
-                 "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
-             }) as mock_holdout, \
-             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
-                 "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
-             }), \
-             patch("fwbg.optimization.process_fold.report_phase"), \
-             patch("fwbg.optimization.process_fold.report_meta"), \
-             patch("fwbg.optimization.process_fold.report_progress"):
-
+        with (
+            patch(
+                "fwbg.optimization.process_fold.select_features",
+                return_value=(features, features),
+            ),
+            patch(
+                "fwbg.optimization.process_fold.run_grid_search",
+                side_effect=fake_grid_search,
+            ),
+            patch(
+                "fwbg.optimization.process_fold.evaluate_on_holdout",
+                return_value={
+                    "pnl": 30.0,
+                    "win_rate": 0.55,
+                    "n_trades": 20,
+                    "trades": [],
+                },
+            ) as mock_holdout,
+            patch(
+                "fwbg.optimization.process_fold.nested_cv_split",
+                return_value={
+                    "inner_folds": [
+                        (train_df.iloc[:split].copy(), train_df.iloc[split:].copy())
+                    ],
+                },
+            ),
+            patch("fwbg.optimization.process_fold.report_phase"),
+            patch("fwbg.optimization.process_fold.report_meta"),
+            patch("fwbg.optimization.process_fold.report_progress"),
+        ):
             result, _ = process_single_fold(
-                fold=fold, fold_idx=0, n_folds=8,
-                fold_indicators=[], precomputed_raw_df=None,
+                fold=fold,
+                fold_idx=0,
+                n_folds=8,
+                fold_indicators=[],
+                precomputed_raw_df=None,
                 preprocessing_configs=None,
-                ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx,
+                sym="TEST",
+                total_indicators=6,
             )
 
         # evaluate_on_holdout must have been called with ctx containing variant HP
         assert mock_holdout.call_count == 1
         holdout_ctx = mock_holdout.call_args[0][3]  # 4th positional arg is ctx
         assert holdout_ctx.model_hyperparameters["signal_column_long"] == "variant_long"
-        assert holdout_ctx.model_hyperparameters["signal_column_short"] == "variant_short"
+        assert (
+            holdout_ctx.model_hyperparameters["signal_column_short"] == "variant_short"
+        )
         assert holdout_ctx.exit_modifier_params["trail_atr_mult"] == 0.5
 
     def test_holdout_uses_base_ctx_when_no_variant(self):
         """When candidate has no model_hyperparameters (old format), base ctx is used."""
         from fwbg.optimization.process_fold import process_single_fold
 
-        base_hp = {"signal_column_long": "base_long", "signal_column_short": "base_short"}
+        base_hp = {
+            "signal_column_long": "base_long",
+            "signal_column_short": "base_short",
+        }
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=0)
         ctx = _make_ctx(model_hyperparameters=base_hp)
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
-        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
-                             sym, progress_callback=None, inner_df=None,
-                             preselected_features_long=None,
-                             preselected_features_short=None):
+        def fake_grid_search(
+            full_pool,
+            inner_folds,
+            ctx,
+            regime_config,
+            sym,
+            progress_callback=None,
+            inner_df=None,
+            preselected_features_long=None,
+            preselected_features_short=None,
+        ):
             n = ctx.total_grid_combinations()
             if progress_callback:
                 for i in range(1, n + 1):
@@ -430,23 +537,46 @@ class TestHoldoutUsesWinningCandidateParams:
         train_df = fold.train_df
         split = len(train_df) // 2
 
-        with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
-             patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
-             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
-                 "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
-             }) as mock_holdout, \
-             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
-                 "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
-             }), \
-             patch("fwbg.optimization.process_fold.report_phase"), \
-             patch("fwbg.optimization.process_fold.report_meta"), \
-             patch("fwbg.optimization.process_fold.report_progress"):
-
+        with (
+            patch(
+                "fwbg.optimization.process_fold.select_features",
+                return_value=(features, features),
+            ),
+            patch(
+                "fwbg.optimization.process_fold.run_grid_search",
+                side_effect=fake_grid_search,
+            ),
+            patch(
+                "fwbg.optimization.process_fold.evaluate_on_holdout",
+                return_value={
+                    "pnl": 30.0,
+                    "win_rate": 0.55,
+                    "n_trades": 20,
+                    "trades": [],
+                },
+            ) as mock_holdout,
+            patch(
+                "fwbg.optimization.process_fold.nested_cv_split",
+                return_value={
+                    "inner_folds": [
+                        (train_df.iloc[:split].copy(), train_df.iloc[split:].copy())
+                    ],
+                },
+            ),
+            patch("fwbg.optimization.process_fold.report_phase"),
+            patch("fwbg.optimization.process_fold.report_meta"),
+            patch("fwbg.optimization.process_fold.report_progress"),
+        ):
             result, _ = process_single_fold(
-                fold=fold, fold_idx=0, n_folds=8,
-                fold_indicators=[], precomputed_raw_df=None,
+                fold=fold,
+                fold_idx=0,
+                n_folds=8,
+                fold_indicators=[],
+                precomputed_raw_df=None,
                 preprocessing_configs=None,
-                ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx,
+                sym="TEST",
+                total_indicators=6,
             )
 
         # With no variant, holdout ctx should have base HP
@@ -484,10 +614,17 @@ class TestHoldoutUsesWinningCandidateParams:
         ctx = _make_ctx()
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
-        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
-                             sym, progress_callback=None, inner_df=None,
-                             preselected_features_long=None,
-                             preselected_features_short=None):
+        def fake_grid_search(
+            full_pool,
+            inner_folds,
+            ctx,
+            regime_config,
+            sym,
+            progress_callback=None,
+            inner_df=None,
+            preselected_features_long=None,
+            preselected_features_short=None,
+        ):
             n = ctx.total_grid_combinations()
             if progress_callback:
                 for i in range(1, n + 1):
@@ -512,21 +649,41 @@ class TestHoldoutUsesWinningCandidateParams:
         train_df = fold.train_df
         split = len(train_df) // 2
 
-        with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
-             patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
-             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value=test_result), \
-             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
-                 "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
-             }), \
-             patch("fwbg.optimization.process_fold.report_phase"), \
-             patch("fwbg.optimization.process_fold.report_meta"), \
-             patch("fwbg.optimization.process_fold.report_progress"):
-
+        with (
+            patch(
+                "fwbg.optimization.process_fold.select_features",
+                return_value=(features, features),
+            ),
+            patch(
+                "fwbg.optimization.process_fold.run_grid_search",
+                side_effect=fake_grid_search,
+            ),
+            patch(
+                "fwbg.optimization.process_fold.evaluate_on_holdout",
+                return_value=test_result,
+            ),
+            patch(
+                "fwbg.optimization.process_fold.nested_cv_split",
+                return_value={
+                    "inner_folds": [
+                        (train_df.iloc[:split].copy(), train_df.iloc[split:].copy())
+                    ],
+                },
+            ),
+            patch("fwbg.optimization.process_fold.report_phase"),
+            patch("fwbg.optimization.process_fold.report_meta"),
+            patch("fwbg.optimization.process_fold.report_progress"),
+        ):
             result, _ = process_single_fold(
-                fold=fold, fold_idx=0, n_folds=8,
-                fold_indicators=[], precomputed_raw_df=None,
+                fold=fold,
+                fold_idx=0,
+                n_folds=8,
+                fold_indicators=[],
+                precomputed_raw_df=None,
                 preprocessing_configs=None,
-                ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx,
+                sym="TEST",
+                total_indicators=6,
             )
         return result
 
@@ -547,12 +704,15 @@ class TestRequiredFeaturesProtectedFromNanFilter:
         nan_mask = rng.random(n) < 0.3
         signal_values[nan_mask] = np.nan
 
-        train_df = pd.DataFrame({
-            "feat1": rng.standard_normal(n),
-            "feat2": rng.standard_normal(n),
-            "signal_col_long": signal_values,
-            "signal_col_short": signal_values.copy(),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        train_df = pd.DataFrame(
+            {
+                "feat1": rng.standard_normal(n),
+                "feat2": rng.standard_normal(n),
+                "signal_col_long": signal_values,
+                "signal_col_short": signal_values.copy(),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         full_pool = ["feat1", "feat2", "signal_col_long", "signal_col_short"]
         protected_cols = {"signal_col_long", "signal_col_short"}
@@ -586,11 +746,14 @@ class TestRequiredFeaturesProtectedFromNanFilter:
         nan_values = values.copy()
         nan_values[:20] = np.nan  # 20% NaN
 
-        train_df = pd.DataFrame({
-            "clean_feat": values,
-            "dirty_feat": nan_values,
-            "protected_signal": nan_values.copy(),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        train_df = pd.DataFrame(
+            {
+                "clean_feat": values,
+                "dirty_feat": nan_values,
+                "protected_signal": nan_values.copy(),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         full_pool = ["clean_feat", "dirty_feat", "protected_signal"]
         protected_cols = {"protected_signal"}
@@ -630,24 +793,38 @@ class TestSignalModelSkipsDropna:
         signal_short = np.full(n, np.nan)
         range_col = np.full(n, np.nan)
         session_mask = rng.random(n) < 0.2
-        signal_long[session_mask] = rng.choice([0.0, 1.0], size=session_mask.sum(), p=[0.9, 0.1])
-        signal_short[session_mask] = rng.choice([0.0, 1.0], size=session_mask.sum(), p=[0.9, 0.1])
+        signal_long[session_mask] = rng.choice(
+            [0.0, 1.0], size=session_mask.sum(), p=[0.9, 0.1]
+        )
+        signal_short[session_mask] = rng.choice(
+            [0.0, 1.0], size=session_mask.sum(), p=[0.9, 0.1]
+        )
         range_col[session_mask] = rng.uniform(10, 50, size=session_mask.sum())
 
-        df = pd.DataFrame({
-            "O": price, "H": price + 0.001, "L": price - 0.001, "C": price,
-            "_atr": np.full(n, 0.001),
-            "_regime": np.full(n, 7, dtype=np.int8),
-            "orb_signal_long": signal_long,
-            "orb_signal_short": signal_short,
-            "orb_range": range_col,
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": price,
+                "H": price + 0.001,
+                "L": price - 0.001,
+                "C": price,
+                "_atr": np.full(n, 0.001),
+                "_regime": np.full(n, 7, dtype=np.int8),
+                "orb_signal_long": signal_long,
+                "orb_signal_short": signal_short,
+                "orb_range": range_col,
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         split = int(n * 0.7)
         fold = WalkForwardFold(
-            fold_id=0, train_start=0, train_end=split,
-            test_start=split, test_end=n,
-            train_df=df.iloc[:split].copy(), test_df=df.iloc[split:].copy(),
+            fold_id=0,
+            train_start=0,
+            train_end=split,
+            test_start=split,
+            test_end=n,
+            train_df=df.iloc[:split].copy(),
+            test_df=df.iloc[split:].copy(),
         )
         ctx = _make_ctx(
             model_type="signal",
@@ -656,8 +833,12 @@ class TestSignalModelSkipsDropna:
         )
 
         result = prepare_signal_fold_data(
-            fold, fold_indicators=[], precomputed_raw_df=None,
-            preprocessing_configs=None, ctx=ctx, sym="TEST",
+            fold,
+            fold_indicators=[],
+            precomputed_raw_df=None,
+            preprocessing_configs=None,
+            ctx=ctx,
+            sym="TEST",
         )
         assert result is not None
         train_df, test_df, full_pool = result
@@ -695,23 +876,33 @@ class TestSignalModelSkipsDropna:
         range_col[session_mask] = rng.uniform(10, 50, size=session_mask.sum())
         sl_dist_col[session_mask] = rng.uniform(5, 25, size=session_mask.sum())
 
-        df = pd.DataFrame({
-            "O": price, "H": price + 0.001, "L": price - 0.001, "C": price,
-            "_atr": np.full(n, 0.001),
-            "_regime": np.full(n, 7, dtype=np.int8),
-            "orb_signal_long": np.where(session_mask, 1.0, np.nan),
-            "orb_range": range_col,
-            "orb_sl_dist": sl_dist_col,
-            # Clean features so ML path has something to work with
-            "feat1": rng.standard_normal(n),
-            "feat2": rng.standard_normal(n),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": price,
+                "H": price + 0.001,
+                "L": price - 0.001,
+                "C": price,
+                "_atr": np.full(n, 0.001),
+                "_regime": np.full(n, 7, dtype=np.int8),
+                "orb_signal_long": np.where(session_mask, 1.0, np.nan),
+                "orb_range": range_col,
+                "orb_sl_dist": sl_dist_col,
+                # Clean features so ML path has something to work with
+                "feat1": rng.standard_normal(n),
+                "feat2": rng.standard_normal(n),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         split = int(n * 0.7)
         fold = WalkForwardFold(
-            fold_id=0, train_start=0, train_end=split,
-            test_start=split, test_end=n,
-            train_df=df.iloc[:split].copy(), test_df=df.iloc[split:].copy(),
+            fold_id=0,
+            train_start=0,
+            train_end=split,
+            test_start=split,
+            test_end=n,
+            train_df=df.iloc[:split].copy(),
+            test_df=df.iloc[split:].copy(),
         )
 
         # Signal path: auxiliary columns preserved
@@ -721,8 +912,12 @@ class TestSignalModelSkipsDropna:
             min_trades=5,
         )
         result = prepare_signal_fold_data(
-            fold, fold_indicators=[], precomputed_raw_df=None,
-            preprocessing_configs=None, ctx=ctx_signal, sym="TEST",
+            fold,
+            fold_indicators=[],
+            precomputed_raw_df=None,
+            preprocessing_configs=None,
+            ctx=ctx_signal,
+            sym="TEST",
         )
         assert result is not None
         train_df, _, _ = result
@@ -732,9 +927,12 @@ class TestSignalModelSkipsDropna:
         # ML path: auxiliary columns dropped (>10% NaN)
         ctx_ml = _make_ctx(model_type="xgboost", min_trades=5)
         result_ml = prepare_fold_data(
-            _make_fold(df.copy(), fold_id=0), fold_indicators=[],
+            _make_fold(df.copy(), fold_id=0),
+            fold_indicators=[],
             precomputed_raw_df=None,
-            preprocessing_configs=None, ctx=ctx_ml, sym="TEST",
+            preprocessing_configs=None,
+            ctx=ctx_ml,
+            sym="TEST",
         )
         assert result_ml is not None
         ml_train, _, _ = result_ml
@@ -755,22 +953,27 @@ class TestSignalModelSkipsDropna:
         feat2 = rng.standard_normal(n)
         feat2[:5] = np.nan  # 2.5% NaN — survives NaN filter but triggers dropna
 
-        df = pd.DataFrame({
-            "O": price,
-            "H": price + 0.001,
-            "L": price - 0.001,
-            "C": price,
-            "_atr": np.full(n, 0.001),
-            "_regime": np.full(n, 7, dtype=np.int8),
-            "feat1": feat1,
-            "feat2": feat2,
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": price,
+                "H": price + 0.001,
+                "L": price - 0.001,
+                "C": price,
+                "_atr": np.full(n, 0.001),
+                "_regime": np.full(n, 7, dtype=np.int8),
+                "feat1": feat1,
+                "feat2": feat2,
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         split = int(n * 0.7)
         fold = WalkForwardFold(
             fold_id=0,
-            train_start=0, train_end=split,
-            test_start=split, test_end=n,
+            train_start=0,
+            train_end=split,
+            test_start=split,
+            test_end=n,
             train_df=df.iloc[:split].copy(),
             test_df=df.iloc[split:].copy(),
         )
@@ -778,11 +981,158 @@ class TestSignalModelSkipsDropna:
         ctx = _make_ctx(model_type="xgboost", min_trades=5)
 
         result = prepare_fold_data(
-            fold, fold_indicators=[], precomputed_raw_df=None,
-            preprocessing_configs=None, ctx=ctx, sym="TEST",
+            fold,
+            fold_indicators=[],
+            precomputed_raw_df=None,
+            preprocessing_configs=None,
+            ctx=ctx,
+            sym="TEST",
         )
         assert result is not None
         train_df, test_df, full_pool = result
 
         # NaN rows should be dropped for xgboost
         assert len(train_df) < split
+
+    def _two_feature_fold(self, feat2_nan):
+        from fwbg.optimization.robust_validation import WalkForwardFold
+
+        n = 200
+        rng = np.random.default_rng(42)
+        price = 1.1 + np.cumsum(rng.normal(0, 0.0005, n))
+        feat2 = rng.standard_normal(n)
+        feat2[feat2_nan] = np.nan
+        df = pd.DataFrame(
+            {
+                "O": price,
+                "H": price + 0.001,
+                "L": price - 0.001,
+                "C": price,
+                "_atr": np.full(n, 0.001),
+                "_regime": np.full(n, 7, dtype=np.int8),
+                "feat1": rng.standard_normal(n),
+                "feat2": feat2,
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
+        split = int(n * 0.7)
+        return WalkForwardFold(
+            fold_id=0,
+            train_start=0,
+            train_end=split,
+            test_start=split,
+            test_end=n,
+            train_df=df.iloc[:split].copy(),
+            test_df=df.iloc[split:].copy(),
+        ), n - split
+
+    def test_interior_nan_keeps_the_bar(self):
+        """Dropping a bar would let the simulator skip TP/SL hits inside the gap."""
+        from fwbg.optimization.process_fold import prepare_fold_data
+
+        fold, n_test = self._two_feature_fold(feat2_nan=[150, 151, 170])
+        ctx = _make_ctx(model_type="xgboost", min_trades=5)
+
+        _, test_df, _ = prepare_fold_data(
+            fold,
+            fold_indicators=[],
+            precomputed_raw_df=None,
+            preprocessing_configs=None,
+            ctx=ctx,
+            sym="TEST",
+        )
+
+        assert len(test_df) == n_test
+        assert test_df["feat2"].isna().sum() == 3
+
+    def test_feed_ending_before_test_leaves_pool_but_keeps_bars(self):
+        """A feature without any value in test is dropped; the test bars all stay."""
+        from fwbg.optimization.process_fold import prepare_fold_data
+
+        fold, n_test = self._two_feature_fold(feat2_nan=slice(140, None))
+        ctx = _make_ctx(model_type="xgboost", min_trades=5)
+
+        _, test_df, full_pool = prepare_fold_data(
+            fold,
+            fold_indicators=[],
+            precomputed_raw_df=None,
+            preprocessing_configs=None,
+            ctx=ctx,
+            sym="TEST",
+        )
+
+        assert "feat2" not in full_pool
+        assert len(test_df) == n_test
+
+    def test_preprocessing_failing_on_test_raises_and_keeps_neither_split(self):
+        """A step failing on one split fails the fold; neither split is half-processed."""
+        from fwbg.optimization.process_fold import PreprocessingError, prepare_fold_data
+
+        class FailsOnSecondExecute:
+            calls = 0
+
+            def fit(self, ctx, **params):
+                pass
+
+            def execute(self, ctx, **params):
+                FailsOnSecondExecute.calls += 1
+                if FailsOnSecondExecute.calls == 2:
+                    raise ValueError("test split")
+                ctx.df["feat1"] = ctx.df["feat1"] * 1000
+                return ctx
+
+        fold, _ = self._two_feature_fold(feat2_nan=[])
+        ctx = _make_ctx(model_type="xgboost", min_trades=5)
+
+        with patch("fwbg.core.get_preprocessor", return_value=FailsOnSecondExecute):
+            with pytest.raises(PreprocessingError, match="test split"):
+                prepare_fold_data(
+                    fold,
+                    fold_indicators=[],
+                    precomputed_raw_df=None,
+                    preprocessing_configs=[{"name": "scale"}],
+                    ctx=ctx,
+                    sym="TEST",
+                )
+
+        # the fold's own frames were not modified in place
+        assert (fold.train_df["feat1"] < 1000).all()
+
+
+def test_candidate_regime_replaces_another_combos_mask():
+    """The frames still carry the last grid combo's mask; the winner's must apply."""
+    import pandas as pd
+
+    from fwbg.optimization.process_fold import apply_candidate_regime
+
+    train_df = pd.DataFrame({"adx": [10.0, 30.0], "_regime": [0, 0]})
+    test_df = pd.DataFrame({"adx": [30.0, 10.0], "_regime": [0, 0]})
+    winner = {"regime_filter": {"conditions": []}}
+
+    apply_candidate_regime(train_df, test_df, winner)
+
+    assert (train_df["_regime"] != 0).all() and (test_df["_regime"] != 0).all()
+
+
+def test_a_failing_preprocessor_raises_instead_of_being_skipped(monkeypatch):
+    """The step was logged and skipped, so the run silently evaluated a different
+    strategy than configured."""
+    from types import SimpleNamespace
+
+    import fwbg.core as core
+    from fwbg.optimization.process_fold import PreprocessingError, _prepare_fold_common
+
+    class Broken:
+        def fit(self, ctx, **params):
+            raise ValueError("boom")
+
+    monkeypatch.setattr(core, "get_preprocessor", lambda name: Broken)
+    index = pd.date_range("2024-01-01", periods=20, freq="h")
+    frame = pd.DataFrame({c: np.linspace(1.0, 2.0, 20) for c in "OHLC"}, index=index)
+    fold = SimpleNamespace(fold_id=3, train_df=frame.iloc[:15], test_df=frame.iloc[15:])
+    ctx = SimpleNamespace(asset_class="forex")
+
+    with pytest.raises(PreprocessingError, match="'broken_step'.*fold 3.*boom"):
+        _prepare_fold_common(
+            fold, [], None, [{"name": "broken_step", "params": {}}], ctx, "TEST"
+        )

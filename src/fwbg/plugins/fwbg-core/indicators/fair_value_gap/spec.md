@@ -1,6 +1,6 @@
 # Plugin Spec — fair_value_gap
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -8,7 +8,7 @@ Detects 3-candle Fair Value Gap imbalance zones and emits ATR-normalized feature
 
 ## Summary
 
-Scans the OHLC series for Smart Money Concepts Fair Value Gaps — bullish when H[i-2] < L[i] and bearish when L[i-2] > H[i]. Maintains a rolling set of active (unfilled, within-lookback) gaps: a bullish gap is filled when a subsequent low breaks below its bottom, a bearish gap when a subsequent high breaks above its top. An active gap is flagged "confirmed" once an engulfing candle of the matching direction reaches into the gap. Per bar, emits ten features derived from the nearest active gap on each side (ATR-normalized distance and size), whether the current close sits inside any active gap, the count of active gaps, and confirmation flags. All features are shifted by one bar via shift_features to prevent lookahead bias.
+Scans the OHLC series for Smart Money Concepts Fair Value Gaps — bullish when H[i-2] < L[i] and bearish when L[i-2] > H[i]. Maintains a rolling set of active (unfilled, within-lookback) gaps: a bullish gap is filled when a subsequent low breaks below its bottom, a bearish gap when a subsequent high breaks above its top. An active gap is flagged "confirmed" once a later bar (never its creation bar) forms a canonical engulfing candle of the matching direction that reaches into the gap. Per bar, emits ten features derived from the nearest active gap on each side (ATR-normalized distance and size), whether the current close sits inside any active gap, the count of active gaps, and confirmation flags. All features are shifted by one bar via shift_features to prevent lookahead bias.
 
 ## Inputs
 
@@ -44,10 +44,10 @@ Scans the OHLC series for Smart Money Concepts Fair Value Gaps — bullish when 
 - AC-006: fvg_bull_size / fvg_bear_size report (top - bottom) / ATR of the same nearest active gap; NaN when no such gap exists.
 - AC-007: fvg_in_gap is 1.0 on bars where close lies within [bottom, top] of any active FVG (bullish or bearish), else 0.0.
 - AC-008: fvg_count equals the number of active FVGs on that bar after fill/lookback pruning and inclusion of newly detected gaps.
-- AC-009: fvg_bull_confirmed / fvg_bear_confirmed flip to 1.0 on a bar when an engulfing candle of the matching direction reaches into an active gap of that type; remain 1.0 for as long as that confirmed gap stays active.
+- AC-009: fvg_bull_confirmed / fvg_bear_confirmed flip to 1.0 on a bar strictly after the gap's creation bar when a canonical engulfing candle (opposite colour to the previous candle, real body fully covering the previous real body) of the matching direction reaches into an active gap of that type; remain 1.0 for as long as that confirmed gap stays active.
 - AC-010: All returned feature columns are shifted by one bar via shift_features so that row i's features depend only on data through bar i-1.
 - AC-011: ATR is computed from true range with a rolling mean of window atr_period (min_periods=1); when ATR <= EPSILON the denominator falls back to 1.0.
-- AC-012: get_feature_columns returns exactly the ten _FEATURES names in order; get_signal_columns returns fvg_bull_active, fvg_bear_active, fvg_in_gap, fvg_bull_confirmed, fvg_bear_confirmed.
+- AC-012: get_feature_columns returns exactly the ten _FEATURES names in order; get_signal_columns returns an empty list (the fvg_* flags are shifted).
 
 ## Edge Cases
 

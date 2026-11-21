@@ -4,13 +4,20 @@ StrategyConfig - Zentrale Konfigurationsklasse für Trading-Strategien.
 Plugin-basierte Struktur mit Pipeline-Format.
 Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
+
 import dataclasses
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
+import math
+import logging
 import os
 
+from fwbg.core.columns import signal_columns_as_features
 from fwbg.core.presets import resolve_presets
+from fwbg.data.trading_hours import TradingHoursError, parse_trading_hours
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -23,16 +30,18 @@ class RegimeCondition:
         Bit 0 (1) = Sideways allowed (future use)
         7 = all allowed, 6 = Long+Short, 4 = Long only, 2 = Short only, 0 = blocked
     """
-    column: str           # e.g. "adx_14", "macro_vix"
-    operator: str         # ">=", "<=", ">", "<"
+
+    column: str  # e.g. "adx_14", "macro_vix"
+    operator: str  # ">=", "<=", ">", "<"
     value: float
-    directions: int = 6       # Bitmask when condition is TRUE (default: Long+Short)
+    directions: int = 6  # Bitmask when condition is TRUE (default: Long+Short)
     else_directions: int = 0  # Bitmask when condition is FALSE (default: blocked)
 
 
 @dataclass
 class RegimeFilterGridConfig:
     """Konfiguration für Regime-Filter als Grid-Parameter."""
+
     condition_grids: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
@@ -62,13 +71,15 @@ class RegimeFilterGridConfig:
             conditions = []
             for grid, val in zip(self.condition_grids, values):
                 if val is not None:
-                    conditions.append({
-                        "column": grid["column"],
-                        "operator": grid["operator"],
-                        "value": val,
-                        "directions": grid.get("directions", 6),
-                        "else_directions": grid.get("else_directions", 0),
-                    })
+                    conditions.append(
+                        {
+                            "column": grid["column"],
+                            "operator": grid["operator"],
+                            "value": val,
+                            "directions": grid.get("directions", 6),
+                            "else_directions": grid.get("else_directions", 0),
+                        }
+                    )
             combinations.append({"conditions": conditions})
 
         return combinations
@@ -89,6 +100,7 @@ class ExitStrategyConfig:
     Each instance is an independent grid element with fixed params.
     The optimizer iterates over the list of instances.
     """
+
     name: str = "fixed"
     params: Dict[str, Any] = field(default_factory=dict)
     ct: List[float] = field(default_factory=lambda: [0.5])
@@ -141,9 +153,7 @@ class OptimizationConfig:
             return cls()
         rfg = data.get("regime_filter_grid")
         regime = (
-            RegimeFilterGridConfig.from_dict(rfg)
-            if rfg
-            else RegimeFilterGridConfig()
+            RegimeFilterGridConfig.from_dict(rfg) if rfg else RegimeFilterGridConfig()
         )
 
         mhg = data.get("model_hyperparameters_grid")
@@ -160,13 +170,16 @@ class OptimizationConfig:
 @dataclass
 class ModelConfig:
     """Konfiguration für das ML-Modell."""
+
     type: str = "xgboost"
     architecture: str = "unified"  # "unified" oder "long_short_separate"
-    hyperparameters: Dict[str, Any] = field(default_factory=lambda: {
-        "n_estimators": 100,
-        "max_depth": 5,
-        "random_state": 42
-    })
+    hyperparameters: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "n_estimators": 100,
+            "max_depth": 5,
+            "random_state": 42,
+        }
+    )
     trade_directions: List[str] = field(default_factory=lambda: ["long", "short"])
     required_features: List[str] = field(default_factory=list)
 
@@ -178,9 +191,10 @@ class ModelConfig:
         return cls(
             type=data.get("type", "xgboost"),
             architecture=data.get("architecture", "unified"),
-            hyperparameters=data.get("hyperparameters", {
-                "n_estimators": 100, "max_depth": 5, "random_state": 42
-            }),
+            hyperparameters=data.get(
+                "hyperparameters",
+                {"n_estimators": 100, "max_depth": 5, "random_state": 42},
+            ),
             trade_directions=directions,
             required_features=data.get("required_features", []),
         )
@@ -201,6 +215,7 @@ class ModelConfig:
 @dataclass
 class EarlyPruningConfig:
     """Early Pruning: Zweiphasiger Grid-Search zur Laufzeitreduktion."""
+
     enabled: bool = False
     keep_ratio: float = 0.5
     min_survivors: int = 10
@@ -214,13 +229,16 @@ class EarlyPruningConfig:
             enabled=data.get("enabled", False),
             keep_ratio=data.get("keep_ratio", 0.5),
             min_survivors=data.get("min_survivors", 10),
-            min_folds_before_pruning_ratio=data.get("min_folds_before_pruning_ratio", 0.3),
+            min_folds_before_pruning_ratio=data.get(
+                "min_folds_before_pruning_ratio", 0.3
+            ),
         )
 
 
 @dataclass
 class ValidationConfig:
     """Parameter für Cross-Validation."""
+
     method: str = "walk_forward"
     folds: int = 8
     oos_size: int = 4000
@@ -252,9 +270,25 @@ class ValidationConfig:
         )
 
 
+def _entry_hours(value: Any) -> Any:
+    """``filters.entry_hours``: a session name, a valid session definition, or None."""
+    if value is None or (isinstance(value, str) and value.strip()):
+        return value
+    if isinstance(value, dict):
+        try:
+            parse_trading_hours(value)
+        except TradingHoursError as exc:
+            raise ValueError(f"filters.entry_hours: {exc}") from exc
+        return value
+    raise ValueError(
+        f"filters.entry_hours must be a session name or a session definition, not {value!r}"
+    )
+
+
 @dataclass
 class FilterConfig:
     """Filter-Parameter für Strategie-Auswahl."""
+
     min_rrr: float = 0.0
     min_trades: int = 50
     min_eval_trades: int = 10  # Min trades per CT in inner CV evaluation
@@ -264,6 +298,10 @@ class FilterConfig:
     min_fold_stability: float = 0.0
     allowed_hours: Optional[List[int]] = None
     allowed_days: Optional[List[int]] = None
+    # Entries only when the entry bar closes inside these hours: the name of one of
+    # the asset's sessions (e.g. "cash", see fwbg.data.trading_hours) or a session
+    # definition {"tz": ..., "windows": [...]}. Time zone and DST aware.
+    entry_hours: Optional[Any] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FilterConfig":
@@ -277,12 +315,14 @@ class FilterConfig:
             min_fold_stability=data.get("min_fold_stability", 0.0),
             allowed_hours=data.get("allowed_hours"),
             allowed_days=data.get("allowed_days"),
+            entry_hours=_entry_hours(data.get("entry_hours")),
         )
 
 
 @dataclass
 class RegimeFilterConfig:
     """Parameter für Regime-Filter (generic conditions)."""
+
     conditions: List[RegimeCondition] = field(default_factory=list)
 
     @classmethod
@@ -312,6 +352,7 @@ class ResourceConfig:
         (ThreadPoolExecutor). XGBoost n_jobs is automatically reduced to avoid
         over-subscribing CPU cores.
     """
+
     max_concurrent_assets: int = 1
     max_parallel_folds: int = 1
 
@@ -323,6 +364,44 @@ class ResourceConfig:
             max_concurrent_assets=data.get("max_concurrent_assets", 1),
             max_parallel_folds=data.get("max_parallel_folds", 1),
         )
+
+
+def _financing_pct(value: Any) -> float:
+    """The strategy's ``financing_pct``: a finite, non-negative number."""
+    try:
+        pct = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"financing_pct must be a number, not {value!r}") from exc
+    if not math.isfinite(pct) or pct < 0:
+        raise ValueError(f"financing_pct must be a finite number >= 0, not {value!r}")
+    return pct
+
+
+# Seed of every seeded component of a run when the strategy sets no ``seed``:
+# feature selectors, model random_state, the Monte-Carlo permutation and the
+# terminal-equity bootstrap all use 42, as they did before the seed was configurable.
+DEFAULT_RUN_SEED = 42
+
+
+def _run_seed(value: Any) -> Optional[int]:
+    """The strategy's ``seed``: None (use the built-in seeds) or an int >= 0."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"seed must be an integer >= 0, not {value!r}")
+    return value
+
+
+DATA_CHECK_MODES = ("strict", "warn", "off")
+
+
+def _data_checks(value: Any) -> str:
+    """The strategy's ``data_checks`` mode: errors block the run, are only logged, or no checks."""
+    if value not in DATA_CHECK_MODES:
+        raise ValueError(
+            f"data_checks must be one of {', '.join(DATA_CHECK_MODES)}, not {value!r}"
+        )
+    return value
 
 
 @dataclass
@@ -337,6 +416,7 @@ class StrategyConfig:
          "feature_selection": [{"name": "...", "params": {...}}]
        }
     """
+
     name: str = "Default Strategy"
     description: str = ""
     tags: List[str] = field(default_factory=list)
@@ -374,11 +454,26 @@ class StrategyConfig:
     # before fold splitting — used e.g. to reserve a holdout tail.
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    holdout_cutoff: Optional[str] = None  # Set by the research gate for a holdout look; see optimization.holdout
+    holdout_cutoff: Optional[str] = (
+        None  # Set by the research gate for a holdout look; see optimization.holdout
+    )
 
     # Transaction-cost multiplier applied to spread (and thus slippage).
     # 1.0 = as configured; 2.0 = cost-stress run.
     cost_multiplier: float = 1.0
+
+    # Overnight financing of CFD positions in % p.a. of the entry price, charged
+    # per calendar night a trade is held (e.g. benchmark rate + broker markup).
+    financing_pct: float = 0.0
+
+    # Data checks before the run (fwbg.data.validation): "strict" stops a symbol on
+    # a data error, "warn" only logs it, "off" skips the checks and keeps filler bars.
+    data_checks: str = "strict"
+
+    # Run seed (int >= 0). None keeps the built-in seed (DEFAULT_RUN_SEED, 42) for
+    # every seeded component, and a model's own random_state or a selector's own
+    # seed parameter still wins. A set value feeds all of them and overrides those.
+    seed: Optional[int] = None
 
     # Signal rules for composed entry signals (visual rule builder)
     signal_rules: Optional[Dict[str, Any]] = None
@@ -387,12 +482,80 @@ class StrategyConfig:
     hypothesis: str = ""
     expected_outcome: str = ""
 
+    def __post_init__(self) -> None:
+        self.financing_pct = _financing_pct(self.financing_pct)
+        self.data_checks = _data_checks(self.data_checks)
+        self.seed = _run_seed(self.seed)
+
+    @property
+    def run_seed(self) -> int:
+        """The seed in effect: ``seed``, or DEFAULT_RUN_SEED when none is set."""
+        return DEFAULT_RUN_SEED if self.seed is None else self.seed
+
+    # Top-level keys from_dict reads; underscore keys are free-form metadata.
+    KNOWN_KEYS = frozenset(
+        {
+            "name",
+            "description",
+            "tags",
+            "pipeline",
+            "exit_strategies",
+            "risk_management",
+            "risk_params",
+            "optimization",
+            "assets",
+            "model",
+            "validation",
+            "filters",
+            "resources",
+            "regime_filter",
+            "datasource",
+            "timeframe",
+            "start_date",
+            "end_date",
+            "holdout_cutoff",
+            "cost_multiplier",
+            "financing_pct",
+            "data_checks",
+            "seed",
+            "signal_rules",
+            "hypothesis",
+            "expected_outcome",
+        }
+    )
+    # Keys older configs used; they are no longer read, so say what replaced them.
+    REMOVED_KEYS = {
+        "grids": "optimization.model_hyperparameters_grid, exit_strategies and model.required_features",
+        "exit_strategy": "exit_strategies",
+        "exit_params": "exit_strategies",
+    }
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
+        ignored = (
+            sorted(k for k in data if not k.startswith("_") and k not in cls.KNOWN_KEYS)
+            if isinstance(data, dict)
+            else []
+        )
+        removed = [k for k in ignored if k in cls.REMOVED_KEYS]
+        if removed:
+            details = ", ".join(f"'{k}' (use {cls.REMOVED_KEYS[k]})" for k in removed)
+            raise ValueError(
+                f"Removed strategy config key(s): {details}. "
+                "They are no longer read, so the run would not do what the config says."
+            )
+        if ignored:
+            log.warning(
+                "Strategy config key(s) %s are not read and have no effect", ignored
+            )
         # Resolve sections: string loads preset file, dict/None passes through
         resolved = resolve_presets(data)
         pipeline = resolved.get("pipeline", {})
+        for indicator in (
+            pipeline.get("indicators", []) if isinstance(pipeline, dict) else []
+        ):
+            signal_columns_as_features(indicator)  # rejects a non-boolean flag
         model_data = resolved.get("model", {})
         validation_data = resolved.get("validation", {})
         filters_data = resolved.get("filters", {})
@@ -412,6 +575,26 @@ class StrategyConfig:
                 )
             else:
                 regime_filter = RegimeFilterConfig.from_dict(regime_data)
+        if regime_filter.conditions:
+            # The grid is what the optimizer reads: a static condition becomes a
+            # single-value grid, so it applies in every combination.
+            fixed = [
+                {
+                    "column": c.column,
+                    "operator": c.operator,
+                    "values": [c.value],
+                    "directions": c.directions,
+                    "else_directions": c.else_directions,
+                }
+                for c in regime_filter.conditions
+            ]
+            optimization = dataclasses.replace(
+                optimization,
+                regime_filter_grid=RegimeFilterGridConfig(
+                    condition_grids=optimization.regime_filter_grid.condition_grids
+                    + fixed,
+                ),
+            )
 
         # Parse exit_strategies array
         raw_exits = data.get("exit_strategies", [])
@@ -438,6 +621,9 @@ class StrategyConfig:
             end_date=data.get("end_date"),
             holdout_cutoff=data.get("holdout_cutoff"),
             cost_multiplier=data.get("cost_multiplier", 1.0),
+            financing_pct=_financing_pct(data.get("financing_pct", 0.0)),
+            data_checks=_data_checks(data.get("data_checks", "strict")),
+            seed=_run_seed(data.get("seed")),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             signal_rules=data.get("signal_rules"),
@@ -523,12 +709,26 @@ class StrategyConfig:
                 "min_trades": self.filters.min_trades,
                 "min_annual_return": self.filters.min_annual_return,
                 "max_drawdown": self.filters.max_drawdown,
-                **({"allowed_hours": self.filters.allowed_hours} if self.filters.allowed_hours else {}),
-                **({"allowed_days": self.filters.allowed_days} if self.filters.allowed_days else {}),
+                **(
+                    {"allowed_hours": self.filters.allowed_hours}
+                    if self.filters.allowed_hours
+                    else {}
+                ),
+                **(
+                    {"allowed_days": self.filters.allowed_days}
+                    if self.filters.allowed_days
+                    else {}
+                ),
+                **(
+                    {"entry_hours": self.filters.entry_hours}
+                    if self.filters.entry_hours
+                    else {}
+                ),
             },
             "hypothesis": self.hypothesis,
             "expected_outcome": self.expected_outcome,
             **({"signal_rules": self.signal_rules} if self.signal_rules else {}),
+            **({"seed": self.seed} if self.seed is not None else {}),
         }
 
     def log_summary(self, log_func=print):
@@ -539,6 +739,4 @@ class StrategyConfig:
             log_func(f"    - {es.name}: {es.params}")
         log_func(f"  Min Trades: {self.filters.min_trades}")
         indicators = self.get_indicators()
-        log_func(
-            f"  Indicators: {len(indicators)} plugins"
-        )
+        log_func(f"  Indicators: {len(indicators)} plugins")

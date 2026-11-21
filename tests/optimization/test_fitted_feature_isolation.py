@@ -59,7 +59,6 @@ def test_autoencoder_transform_isolated_from_future_tail():
         "ae_latent_0",
         "ae_latent_1",
         "ae_reconstruction_error",
-        "ae_explained_variance",
     ]
     np.testing.assert_allclose(
         baseline[output_columns].iloc[:30],
@@ -90,14 +89,14 @@ def test_inner_refit_uses_only_inner_training_rows():
         part.attrs["fwbg_stateful_indicator_configs"] = configs
         part.attrs["fwbg_stateful_output_columns"] = output_columns
 
-    baseline_train, baseline_val = refit_stateful_features(
-        [(inner_train, inner_val)]
-    )[0]
+    baseline_train, baseline_val = refit_stateful_features([(inner_train, inner_val)])[
+        0
+    ]
     mutated_val = inner_val.copy()
     mutated_val.iloc[20:, mutated_val.columns.get_loc("feature_0")] += 10_000.0
-    changed_train, changed_val = refit_stateful_features(
-        [(inner_train, mutated_val)]
-    )[0]
+    changed_train, changed_val = refit_stateful_features([(inner_train, mutated_val)])[
+        0
+    ]
 
     np.testing.assert_allclose(
         baseline_train[["ae_latent_0", "ae_reconstruction_error"]],
@@ -109,3 +108,38 @@ def test_inner_refit_uses_only_inner_training_rows():
         changed_val[["ae_latent_0", "ae_reconstruction_error"]].iloc[:20],
         equal_nan=True,
     )
+
+
+def test_refit_trims_only_the_leading_warm_up_and_keeps_the_index_contiguous(
+    monkeypatch,
+):
+    """dropna() on the whole frame removed interior rows too: holes in the bar sequence."""
+    import fwbg.pipeline.features as features
+    from fwbg.optimization.nested_cv import _trim_leading_nan
+
+    def fake_pool(frame, indicators, fit_df):
+        out = frame.copy()
+        out["ae_latent_0"] = np.arange(len(out), dtype=float)
+        out.iloc[0, out.columns.get_loc("ae_latent_0")] = np.nan  # shifted by design
+        out.iloc[5, out.columns.get_loc("ae_latent_0")] = np.nan  # interior gap
+        out.iloc[7, out.columns.get_loc("feature_0")] = np.nan  # not a stateful column
+        return out
+
+    monkeypatch.setattr(features, "compute_indicator_pool", fake_pool)
+    frame = _frame(40)
+    train, val = frame.iloc[:20].copy(), frame.iloc[20:].copy()
+    for part in (train, val):
+        part.attrs["fwbg_stateful_indicator_configs"] = [{"name": "x", "params": {}}]
+        part.attrs["fwbg_stateful_output_columns"] = ["ae_latent_0"]
+
+    out_train, out_val = refit_stateful_features([(train, val)])[0]
+
+    # warm-up row 0 is gone, every later row stays (interior NaN is kept as NaN)
+    assert list(out_train.index) == list(train.index[1:])
+    assert list(out_val.index) == list(val.index[1:])
+    assert np.isnan(out_train["ae_latent_0"].loc[train.index[5]])
+    assert out_train.attrs["fwbg_stateful_output_columns"] == ["ae_latent_0"]
+
+    allnan = pd.DataFrame({"a": [np.nan, np.nan]})
+    assert _trim_leading_nan(allnan, ["a"]).empty
+    assert _trim_leading_nan(allnan, []).shape == (2, 1)

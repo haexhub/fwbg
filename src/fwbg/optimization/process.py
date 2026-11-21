@@ -5,12 +5,14 @@ Hauptmodul für die Verarbeitung einzelner Symbole mit Walk-Forward Optimierung.
 Fold-Verarbeitung ist in process_fold.py ausgelagert.
 Grid-Search Funktionen sind in grid_search.py ausgelagert.
 """
+
 import functools
 import gc
 import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -19,22 +21,37 @@ from fwbg.data import config as data_config
 from fwbg.core.config import StrategyConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
-from fwbg.data.loader import load_data_aligned, run_data_loading
+from fwbg.data.loader import apply_date_window, load_data_aligned, run_data_loading
+from fwbg.data.trading_hours import asset_sessions
+from fwbg.data.validation import DataCheckError, check_bars
+from fwbg_sdk.enums import Timeframe
 from fwbg.simulation.trade import (
-    calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns,
+    calculate_sharpe_ratio,
+    calculate_calmar_from_returns,
+    pnl_to_returns,
+    kelly_inputs,
 )
 from fwbg.core import get_risk_manager
 from fwbg.research.dsr import return_statistics
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
-from .bias_checks import check_asset_bias, fold_bias_ratios
+from .bias_checks import INNER_MODEL_NOTE, check_asset_bias, fold_bias_ratios
+from .annualization import bars_per_year as _bars_per_year
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
-from .causal_variants import VariantRecord, replay_prefix_variants, replay_view, variant_score
+from .causal_variants import (
+    VariantRecord,
+    replay_prefix_variants,
+    replay_view,
+    variant_score,
+)
 from .process_fold import precompute_indicators, process_single_fold
 from .selection_protocol import SELECTION_PROTOCOL
 from .unified_simulation import (
-    causal_candidates, consistent_folds, hp_key, merge_unified_settings,
+    causal_candidates,
+    consistent_folds,
+    hp_key,
+    merge_unified_settings,
     run_unified_simulation,
 )
 
@@ -109,12 +126,16 @@ def _compute_trade_analytics(trades_detailed):
         cont_mfes = [t["continuation_mfe"] for t in winners_with_continuation]
         cont_maes = [t["continuation_mae"] for t in winners_with_continuation]
         # How many winners had significant continuation (>50% of TP distance)?
-        with_continuation = [t for t in winners_with_continuation
-                             if t["continuation_mfe"] > t.get("tp_distance", 1) * 0.5]
+        with_continuation = [
+            t
+            for t in winners_with_continuation
+            if t["continuation_mfe"] > t.get("tp_distance", 1) * 0.5
+        ]
         analytics["tp_potential"] = {
             "winners_analyzed": len(winners_with_continuation),
             "with_significant_continuation": len(with_continuation),
-            "continuation_rate": len(with_continuation) / len(winners_with_continuation),
+            "continuation_rate": len(with_continuation)
+            / len(winners_with_continuation),
             "continuation_mfe": {
                 "mean": float(np.mean(cont_mfes)),
                 "median": float(np.median(cont_mfes)),
@@ -147,7 +168,9 @@ def _compute_trade_analytics(trades_detailed):
         for key in ct_groups:
             total = ct_groups[key]["wins"] + ct_groups[key]["losses"]
             ct_groups[key]["total"] = total
-            ct_groups[key]["win_rate"] = ct_groups[key]["wins"] / total if total > 0 else 0
+            ct_groups[key]["win_rate"] = (
+                ct_groups[key]["wins"] / total if total > 0 else 0
+            )
         analytics["ct_breakdown"] = ct_groups
 
     # Per-direction breakdown
@@ -176,16 +199,26 @@ def _parse_ct_value(ct_value):
     return ct_value, ct_value, ct_value
 
 
-def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
-                                 sample_bias_detected, bias_ratios, mean_bias_ratio,
-                                 config_inconsistent=False, folds_without_bias_ratio=0):
+def _build_walk_forward_summary(
+    all_fold_results,
+    win_rates,
+    pnls,
+    total_trades,
+    sample_bias_detected,
+    bias_ratios,
+    mean_bias_ratio,
+    config_inconsistent=False,
+    folds_without_bias_ratio=0,
+):
     """Build walk_forward summary dict shared by all result types."""
     profitable_folds = sum(1 for p in pnls if p > 0)
     summary = {
         "n_folds": len(all_fold_results),
         "successful_folds": len(all_fold_results),
         "profitable_folds": profitable_folds,
-        "fold_stability": profitable_folds / len(all_fold_results) if all_fold_results else 0.0,
+        "fold_stability": profitable_folds / len(all_fold_results)
+        if all_fold_results
+        else 0.0,
         # win_rates: folds that traded; None when no fold traded.
         "mean_win_rate": np.mean(win_rates) if win_rates else None,
         "std_win_rate": np.std(win_rates) if win_rates else None,
@@ -235,10 +268,18 @@ def decode_signal_meta(signal_col: str) -> dict:
     return meta
 
 
-def _run_folds_parallel(wf_folds, max_parallel_folds,
-                        fold_indicators, precomputed_raw_df, preprocessing_configs,
-                        ctx, sym, total_indicators,
-                        all_fold_results, accumulated_grid_results):
+def _run_folds_parallel(
+    wf_folds,
+    max_parallel_folds,
+    fold_indicators,
+    precomputed_raw_df,
+    preprocessing_configs,
+    ctx,
+    sym,
+    total_indicators,
+    all_fold_results,
+    accumulated_grid_results,
+):
     """Run walk-forward folds in parallel using ThreadPoolExecutor.
 
     XGBoost n_jobs is reduced proportionally to avoid CPU over-subscription.
@@ -265,9 +306,15 @@ def _run_folds_parallel(wf_folds, max_parallel_folds,
             futures = {
                 executor.submit(
                     process_single_fold,
-                    fold, fold_idx, n_folds,
-                    fold_indicators, precomputed_raw_df, preprocessing_configs,
-                    ctx, sym, total_indicators,
+                    fold,
+                    fold_idx,
+                    n_folds,
+                    fold_indicators,
+                    precomputed_raw_df,
+                    preprocessing_configs,
+                    ctx,
+                    sym,
+                    total_indicators,
                 ): fold_idx
                 for fold_idx, fold in enumerate(wf_folds)
             }
@@ -281,21 +328,28 @@ def _run_folds_parallel(wf_folds, max_parallel_folds,
         gc.collect()
 
 
-def _process_single_variant(variant_idx, variant_label, variant_strategy,
-                             df, wf_folds, asset, sym, n_variants):
+def _process_single_variant(
+    variant_idx, variant_label, variant_strategy, df, wf_folds, asset, sym, n_variants
+):
     """Process one indicator grid variant (thread-safe)."""
     if n_variants > 1:
-        log(1, f"--- Variant {variant_idx+1}/{n_variants}: {variant_label} ---", sym)
+        log(1, f"--- Variant {variant_idx + 1}/{n_variants}: {variant_label} ---", sym)
 
     variant_ctx = SimulationContext.create(asset, variant_strategy)
 
     grid_per_fold = variant_ctx.total_grid_combinations()
     total_trainings = grid_per_fold * len(wf_folds)
     if n_variants == 1:
-        log(1, f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings", sym)
+        log(
+            1,
+            f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings",
+            sym,
+        )
 
     fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
-        df, variant_strategy, sym,
+        df,
+        variant_strategy,
+        sym,
     )
     preprocessing_configs = variant_strategy.get_preprocessing()
 
@@ -307,9 +361,15 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
     if max_parallel_folds <= 1:
         for fold_idx, fold in enumerate(wf_folds):
             fold_result, grid_results = process_single_fold(
-                fold, fold_idx, n_folds,
-                fold_indicators, precomputed_raw_df, preprocessing_configs,
-                variant_ctx, sym, total_indicators,
+                fold,
+                fold_idx,
+                n_folds,
+                fold_indicators,
+                precomputed_raw_df,
+                preprocessing_configs,
+                variant_ctx,
+                sym,
+                total_indicators,
             )
             accumulated_grid_results.extend(grid_results)
             if fold_result:
@@ -317,10 +377,16 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
             gc.collect()
     else:
         _run_folds_parallel(
-            wf_folds, max_parallel_folds,
-            fold_indicators, precomputed_raw_df, preprocessing_configs,
-            variant_ctx, sym, total_indicators,
-            all_fold_results, accumulated_grid_results,
+            wf_folds,
+            max_parallel_folds,
+            fold_indicators,
+            precomputed_raw_df,
+            preprocessing_configs,
+            variant_ctx,
+            sym,
+            total_indicators,
+            all_fold_results,
+            accumulated_grid_results,
         )
     # Parallel folds arrive in completion order; per-fold stats, the HP majority and
     # the merges must not depend on thread timing.
@@ -330,8 +396,12 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
     n_successful, mean_pnl = score
 
     if n_variants > 1:
-        log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
-               + (f", mean_inner_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
+        log(
+            1,
+            f"  Variant result: {n_successful}/{len(wf_folds)} folds"
+            + (f", mean_inner_pnl={mean_pnl:.1f}" if n_successful else ""),
+            sym,
+        )
 
     return {
         "score": score,
@@ -370,12 +440,24 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
 
     for idx, (label, strat) in enumerate(variants):
         result = _process_single_variant(
-            idx, label, strat, df, wf_folds, asset, sym, n_variants,
+            idx,
+            label,
+            strat,
+            df,
+            wf_folds,
+            asset,
+            sym,
+            n_variants,
         )
-        records.append(VariantRecord(
-            result["label"], result["strategy"], result["ctx"],
-            result["preprocessing_configs"], replay_view(result["all_fold_results"]),
-        ))
+        records.append(
+            VariantRecord(
+                result["label"],
+                result["strategy"],
+                result["ctx"],
+                result["preprocessing_configs"],
+                replay_view(result["all_fold_results"]),
+            )
+        )
         if result["score"] > best_score:
             # Release previous best's heavy data
             if best_data is not None:
@@ -395,35 +477,9 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
     return best_data
 
 
-def _apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
-    """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
-
-    `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
-    and holdout windows that share a boundary date from overlapping. Either
-    bound may be omitted. Raises `ValueError` naming the bad value if a date
-    string cannot be parsed.
-    """
-    start = None
-    end = None
-    if start_date is not None:
-        try:
-            start = pd.Timestamp(start_date)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Invalid start_date {start_date!r}: {exc}") from exc
-    if end_date is not None:
-        try:
-            end = pd.Timestamp(end_date)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Invalid end_date {end_date!r}: {exc}") from exc
-
-    if start is not None and end is not None:
-        return df.loc[(df.index >= start) & (df.index < end)]
-    if start is not None:
-        return df.loc[df.index >= start]
-    return df.loc[df.index < end]
-
-
-def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.DataFrame | None:
+def load_symbol_frame(
+    csv_path: str, strategy: StrategyConfig, sym: str
+) -> pd.DataFrame | None:
     """Load *csv_path* as the run sees it: resampled, date-windowed, flat bars
     dropped, data-loading pipeline applied. None without data (in the window).
     """
@@ -436,21 +492,30 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
     # Resample to target timeframe if loaded from a lower one
     if data_config.RESAMPLE_FROM:
         from fwbg.data.resample import resample_ohlcv
+
         n_before = len(df)
         df = resample_ohlcv(df, data_config.TIMEFRAME)
-        log(2, f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
-                f"({n_before} → {len(df)} bars)", sym)
+        log(
+            2,
+            f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
+            f"({n_before} → {len(df)} bars)",
+            sym,
+        )
 
     # Restrict to the configured backtest window (ISO start/end dates).
     # The DatetimeIndex makes all downstream fold/holdout splitting (which is
     # purely positional) operate on the window automatically — no fold-logic
     # change needed. Used to reserve a holdout tail or run a holdout window.
-    # Half-open: start_date inclusive, end_date exclusive (see _apply_date_window).
+    # Half-open: start_date inclusive, end_date exclusive (see apply_date_window).
     if strategy.start_date or strategy.end_date:
         n_before = len(df)
-        df = _apply_date_window(df, strategy.start_date, strategy.end_date)
-        log(2, f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
-                f"{n_before} → {len(df)} Zeilen", sym)
+        df = apply_date_window(df, strategy.start_date, strategy.end_date)
+        log(
+            2,
+            f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
+            f"{n_before} → {len(df)} Zeilen",
+            sym,
+        )
         if df.empty:
             log(1, "SKIP - Keine Daten im Datumsfenster", sym)
             return None
@@ -459,10 +524,11 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
     if strategy.assets.get("drop_flat_bars"):
         n_before = len(df)
         df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
-        log(2, f"Dropped {n_before - len(df)} flat bars "
-                f"({n_before} → {len(df)})", sym)
+        log(2, f"Dropped {n_before - len(df)} flat bars ({n_before} → {len(df)})", sym)
 
-    log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
+    log(2, f"Daten geladen: {len(df)} Zeilen ({time.time() - t0:.1f}s)", sym)
+    df = _checked(df, strategy, sym)
+    data_checks = df.attrs.get("data_checks")
 
     # === DATA LOADING (generic orchestrator) ===
     data_loading_configs = strategy.get_data_loading()
@@ -470,8 +536,42 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
         t0 = time.time()
         report_phase(sym, "Data Loading...")
         df = run_data_loading(df, data_loading_configs)
-        log(2, f"Data Loading abgeschlossen ({time.time()-t0:.1f}s)", sym)
+        log(2, f"Data Loading abgeschlossen ({time.time() - t0:.1f}s)", sym)
+    if data_checks is not None:
+        df.attrs["data_checks"] = data_checks
     return df
+
+
+def _checked(df: pd.DataFrame, strategy: StrategyConfig, sym: str) -> pd.DataFrame:
+    """Apply the strategy's data checks: drop filler bars, log findings, stop on errors.
+
+    The report travels in ``df.attrs["data_checks"]`` for the run result.
+    """
+    if strategy.data_checks == "off":
+        return df
+    hours = asset_sessions(sym).get("tradable")
+    if hours is None:
+        log(
+            1,
+            "Datencheck: keine Handelszeiten für das Symbol hinterlegt, nur Kurs-Checks",
+            sym,
+        )
+    clean, report = check_bars(
+        df,
+        symbol=sym,
+        bar_minutes=Timeframe.from_str(data_config.TIMEFRAME).minutes,
+        hours=hours,
+    )
+    for finding in report.findings:
+        log(
+            1 if finding.severity.value != "info" else 2,
+            f"Datencheck {finding.severity.value}: {finding.code} ({finding.count}) {finding.message}",
+            sym,
+        )
+    if report.errors and strategy.data_checks == "strict":
+        raise DataCheckError(report)
+    clean.attrs["data_checks"] = report.to_dict()
+    return clean
 
 
 def _records_selection_protocol(func):
@@ -498,32 +598,48 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     Note:
         The configured backtest window (`strategy.start_date`/`end_date`) is
         half-open: `start_date` is inclusive, `end_date` is exclusive. See
-        `_apply_date_window`.
+        `apply_date_window`.
     """
-    sym = os.path.basename(csv_path).split("_")[0]
+    sym = os.path.basename(csv_path).split("_")[0].upper()
     t_start = time.time()
     start_log_capture()
     result = {}
+    data_checks = None
     try:
         if sym in ["VIX", "DXY"]:
             log(2, "Übersprungen (Makro-Asset)", sym)
-            result = {"symbol": sym, "status": "macro_asset"}
+            result: dict[str, Any] = {"symbol": sym, "status": "macro_asset"}
             return result
 
         log(1, "START", sym)
         report_phase(sym, "Lade Daten...")
 
-        df = load_symbol_frame(csv_path, strategy, sym)
+        try:
+            df = load_symbol_frame(csv_path, strategy, sym)
+        except DataCheckError as exc:
+            log(1, f"SKIP - {exc}", sym)
+            report_done(sym, "data_invalid")
+            result = {
+                "symbol": sym,
+                "status": "data_invalid",
+                "data_checks": exc.report.to_dict(),
+            }
+            return result
         if df is None:
             result = {"symbol": sym, "status": "no_data"}
             return result
+        data_checks = df.attrs.pop("data_checks", None)
 
         # === LOOKAHEAD BIAS PREVENTION ===
         # KRITISCH: Walk-Forward Splits VOR Indikator-Berechnung!
         # Rolling Windows in Indikatoren würden sonst Zukunftsdaten sehen.
 
         if len(df) < data_config.MIN_TRADES * 8:
-            log(1, f"SKIP - Zu wenig Daten für Walk-Forward ({len(df)} < {data_config.MIN_TRADES * 8})", sym)
+            log(
+                1,
+                f"SKIP - Zu wenig Daten für Walk-Forward ({len(df)} < {data_config.MIN_TRADES * 8})",
+                sym,
+            )
             result = {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
             return result
 
@@ -535,13 +651,18 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === MODEL DEPENDENCY VALIDATION ===
         from fwbg.core.registry import get_model
+
         model_class = get_model(ctx.model_type)
         required = model_class.get_required_indicators()
         if required:
             configured = {ind["name"] for ind in strategy.get_indicators()}
             missing = [r for r in required if r not in configured]
             if missing:
-                log(1, f"SKIP - Model '{ctx.model_type}' requires indicators: {missing}", sym)
+                log(
+                    1,
+                    f"SKIP - Model '{ctx.model_type}' requires indicators: {missing}",
+                    sym,
+                )
                 result = {
                     "symbol": sym,
                     "status": "missing_model_dependencies",
@@ -563,7 +684,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 (ctx.signal_rules.get(d) or {}).get("conditions")
                 for d in ("long", "short")
             )
-            has_time_filter = bool(ctx.allowed_hours) or bool(ctx.allowed_days)
+            has_time_filter = (
+                bool(ctx.allowed_hours)
+                or bool(ctx.allowed_days)
+                or ctx.entry_hours is not None
+            )
             has_required_features = bool(strategy.model.required_features)
             if not (has_signal_rules or has_time_filter or has_required_features):
                 log(1, "SKIP - Signal model has no entry-signal source", sym)
@@ -574,10 +699,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         "Signal model has no entry-signal source: needs "
                         "signal_rules with conditions, non-empty "
                         "model.required_features, or an allowed_hours/"
-                        "allowed_days time filter."
+                        "allowed_days/entry_hours time filter."
                     ),
                 }
                 return result
+
+        # entry_delay=0 on a decision taken at the signal bar's close: say so once.
+        from fwbg.signals.timing import warn_close_decisions
+
+        warn_close_decisions(ctx, sym)
 
         # === WALK-FORWARD FOLDS ERSTELLEN ===
         # Fold-Dimensionen adaptiv an die tatsächlich vorhandene Historie
@@ -596,12 +726,22 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 f"~{min_oos * 3 + max(200, target_min_train // 4)})"
             )
             log(1, f"SKIP - {reason}", sym)
-            return {"symbol": sym, "status": "insufficient_data_for_folds", "error": reason}
+            return {
+                "symbol": sym,
+                "status": "insufficient_data_for_folds",
+                "error": reason,
+            }
         n_folds, oos_size, min_train = plan
         if n_folds < target_folds:
-            log(1, f"Adaptive folds: {n_folds} instead of {target_folds} "
-                   f"({len(df)} bars available)", sym)
-        report_phase(sym, f"Creating {n_folds} walk-forward folds (oos_size={oos_size})...")
+            log(
+                1,
+                f"Adaptive folds: {n_folds} instead of {target_folds} "
+                f"({len(df)} bars available)",
+                sym,
+            )
+        report_phase(
+            sym, f"Creating {n_folds} walk-forward folds (oos_size={oos_size})..."
+        )
         try:
             wf_folds = create_walk_forward_folds(
                 df,
@@ -613,12 +753,24 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             )
         except ValueError as e:
             log(1, f"SKIP - {str(e)}", sym)
-            result = {"symbol": sym, "status": "insufficient_data_for_folds", "error": str(e)}
+            result = {
+                "symbol": sym,
+                "status": "insufficient_data_for_folds",
+                "error": str(e),
+            }
             return result
 
-        log(1, f"Walk-Forward: {len(wf_folds)} folds created (prevents sample bias)", sym)
+        log(
+            1,
+            f"Walk-Forward: {len(wf_folds)} folds created (prevents sample bias)",
+            sym,
+        )
         for fold in wf_folds:
-            log(2, f"  Fold {fold.fold_id}: Train[{fold.train_end - fold.train_start}] Test[{fold.test_end - fold.test_start}]", sym)
+            log(
+                2,
+                f"  Fold {fold.fold_id}: Train[{fold.train_end - fold.train_start}] Test[{fold.test_end - fold.test_start}]",
+                sym,
+            )
 
         # === INDICATOR GRID: expand variants ===
         from .indicator_grid import expand_indicator_grid
@@ -630,14 +782,22 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, f"Indicator Grid: {n_variants} variants", sym)
 
         best_variant_data = _run_indicator_variants(
-            variants, df, wf_folds, asset, sym,
+            variants,
+            df,
+            wf_folds,
+            asset,
+            sym,
         )
 
         # Use best variant for post-processing
         if len(variants) > 1:
             score = best_variant_data["score"]
-            log(1, f"Best variant: {best_variant_data['label']} "
-                   f"({score[0]}/{len(wf_folds)} folds, mean_inner_pnl={score[1]:.1f})", sym)
+            log(
+                1,
+                f"Best variant: {best_variant_data['label']} "
+                f"({score[0]}/{len(wf_folds)} folds, mean_inner_pnl={score[1]:.1f})",
+                sym,
+            )
 
         ctx = best_variant_data["ctx"]
         all_fold_results = best_variant_data["all_fold_results"]
@@ -645,40 +805,61 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         fold_indicators = best_variant_data["fold_indicators"]
         precomputed_raw_df = best_variant_data["precomputed_raw_df"]
         preprocessing_configs = best_variant_data["preprocessing_configs"]
-        indicator_variant_label = best_variant_data["label"] if len(variants) > 1 else None
+        indicator_variant_label = (
+            best_variant_data["label"] if len(variants) > 1 else None
+        )
 
         # === END OF WALK-FORWARD LOOP ===
 
         if len(all_fold_results) == 0:
             log(1, "SKIP - No successful folds", sym)
             report_done(sym, "no_successful_folds")
-            result = {"symbol": sym, "status": "no_successful_folds", "grid_results": accumulated_grid_results}
+            result = {
+                "symbol": sym,
+                "status": "no_successful_folds",
+                "grid_results": accumulated_grid_results,
+            }
             if indicator_variant_label:
                 result["indicator_variant"] = indicator_variant_label
             # Include best grid result for diagnostics
-            valid = [g for g in accumulated_grid_results
-                     if g.get("inner_val_pnl") is not None
-                     and g["inner_val_pnl"] != float("-inf")]
+            valid = [
+                g
+                for g in accumulated_grid_results
+                if g.get("inner_val_pnl") is not None
+                and g["inner_val_pnl"] != float("-inf")
+            ]
             if valid:
                 best_grid = max(valid, key=lambda g: g["inner_val_pnl"])
                 result["best_grid_result"] = best_grid
-                log(1, f"  Best grid result: TP={best_grid['tp_mult']}, SL={best_grid['sl_mult']}, "
-                       f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
-                       f"PnL={best_grid['inner_val_pnl']:.1f}", sym)
+                log(
+                    1,
+                    f"  Best grid result: TP={best_grid['tp_mult']}, SL={best_grid['sl_mult']}, "
+                    f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
+                    f"PnL={best_grid['inner_val_pnl']:.1f}",
+                    sym,
+                )
             return result
 
-        log(1, f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===", sym)
+        log(
+            1,
+            f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===",
+            sym,
+        )
 
         # Aggregate metrics across all folds
         # A fold whose chosen setting traded nothing (kept: the test set must not filter
         # folds) has no win rate; it still counts as a fold in the per-fold PnL statistics.
-        win_rates = [r["test_win_rate"] for r in all_fold_results if r["test_trades"] > 0]
+        win_rates = [
+            r["test_win_rate"] for r in all_fold_results if r["test_trades"] > 0
+        ]
         pnls = [r["test_pnl"] for r in all_fold_results]
         trades_counts = [r["test_trades"] for r in all_fold_results]
         bias = fold_bias_ratios(all_fold_results)
         bias_ratios = bias["bias_ratios"]
 
-        mean_wr = np.mean(win_rates) if win_rates else 0.0  # replaced by the unified trades' WR
+        mean_wr = (
+            np.mean(win_rates) if win_rates else 0.0
+        )  # replaced by the unified trades' WR
         std_wr = np.std(win_rates) if win_rates else 0.0
         mean_pnl = np.mean(pnls)
         std_pnl = np.std(pnls)
@@ -691,13 +872,26 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         log(1, "Walk-Forward Results:", sym)
         if win_rates:
-            log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
+            log(
+                1,
+                f"  Win-Rate: {mean_wr * 100:.1f}% ± {std_wr * 100:.1f}% (range: {min(win_rates) * 100:.1f}%-{max(win_rates) * 100:.1f}%)",
+                sym,
+            )
         else:
             log(1, "  Win-Rate: n/a (no fold traded)", sym)
-        log(1, f"  PnL: {mean_pnl:.1f} ± {std_pnl:.1f} (range: {min(pnls):.1f}-{max(pnls):.1f})", sym)
+        log(
+            1,
+            f"  PnL: {mean_pnl:.1f} ± {std_pnl:.1f} (range: {min(pnls):.1f}-{max(pnls):.1f})",
+            sym,
+        )
         log(1, f"  Total Trades: {total_trades}", sym)
-        log(1, f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}"
-               f" ({bias['folds_without_bias_ratio']} folds without: inner PnL <= 0)", sym)
+        log(
+            1,
+            f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}"
+            f" ({bias['folds_without_bias_ratio']} folds without: inner PnL <= 0;"
+            f" {INNER_MODEL_NOTE})",
+            sym,
+        )
 
         if sample_bias_detected:
             log(1, "  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
@@ -719,10 +913,18 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         config_inconsistent = not is_consistent and len(all_fold_results) > 1
 
         if config_inconsistent:
-            log(1, "  WARNING: Fold configs vary across folds (aggregating all trades)", sym)
+            log(
+                1,
+                "  WARNING: Fold configs vary across folds (aggregating all trades)",
+                sym,
+            )
             log(1, f"    TP: {tp_values} (CV={tp_cv:.2f})", sym)
             log(1, f"    SL: {sl_values} (CV={sl_cv:.2f})", sym)
-            log(1, f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})", sym)
+            log(
+                1,
+                f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})",
+                sym,
+            )
 
         # === MODEL HYPERPARAMETERS CONSISTENCY ===
         # For rule-based signal strategies, model_hyperparameters define the strategy
@@ -730,7 +932,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # uses only the majority-HP folds; each causal prefix applies the same rule.
         majority_folds = consistent_folds(all_fold_results)
         if len(majority_folds) < len(all_fold_results):
-            majority_hp_key = hp_key(majority_folds[0]["best_config"].get("model_hyperparameters"))
+            majority_hp_key = hp_key(
+                majority_folds[0]["best_config"].get("model_hyperparameters")
+            )
             # Show what each fold picked
             for r in all_fold_results:
                 hp = r["best_config"].get("model_hyperparameters") or {}
@@ -755,17 +959,30 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         tp_unified, sl_unified, ct_unified = unified_candidate["params"]
         features_long = unified_candidate.get("selected_features_long") or []
         features_short = unified_candidate.get("selected_features_short") or []
-        log(1, f"  Frozen setting: TP={tp_unified:.2f} SL={sl_unified:.2f} CT={ct_unified} "
-               f"timeout={unified_candidate.get('timeout_bars')} "
-               f"features={len(features_long)} long, {len(features_short)} short", sym)
+        log(
+            1,
+            f"  Frozen setting: TP={tp_unified:.2f} SL={sl_unified:.2f} CT={ct_unified} "
+            f"timeout={unified_candidate.get('timeout_bars')} "
+            f"features={len(features_long)} long, {len(features_short)} short",
+            sym,
+        )
         if unified_candidate.get("model_hyperparameters"):
             log(2, f"    Model HP: {unified_candidate['model_hyperparameters']}", sym)
         if unified_candidate.get("exit_modifier_params"):
-            log(2, f"    Exit modifier: {unified_candidate['exit_modifier_params']}", sym)
+            log(
+                2,
+                f"    Exit modifier: {unified_candidate['exit_modifier_params']}",
+                sym,
+            )
         if best_variant_data.get("variants"):
             unified_fold_results = replay_prefix_variants(
-                wf_folds, best_variant_data["variants"], best_variant_data["frozen_index"],
-                fold_indicators, precomputed_raw_df, df, sym,
+                wf_folds,
+                best_variant_data["variants"],
+                best_variant_data["frozen_index"],
+                fold_indicators,
+                precomputed_raw_df,
+                df,
+                sym,
             )
         else:
             replay_candidates = causal_candidates(wf_folds, all_fold_results)
@@ -773,15 +990,28 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             # Pass signal data prep for signal models
             if ctx.model_type == "signal":
                 from .signal_fold import prepare_signal_fold_data
+
                 prepare_fn = prepare_signal_fold_data
             else:
                 prepare_fn = None  # uses default (prepare_fold_data)
 
             unified_fold_results = run_unified_simulation(
-                wf_folds, replay_candidates,
-                fold_indicators, precomputed_raw_df, preprocessing_configs,
-                ctx, sym, prepare_data_fn=prepare_fn,
+                wf_folds,
+                replay_candidates,
+                fold_indicators,
+                precomputed_raw_df,
+                preprocessing_configs,
+                ctx,
+                sym,
+                prepare_data_fn=prepare_fn,
             )
+
+        # Bars per calendar year come from the data (a 7-bar/day instrument has far
+        # fewer than bars_per_hour * 24 * 250), shared with the holdout. Taken before
+        # the frame is released.
+        bars_per_year = _bars_per_year(
+            df.index, fallback=data_config.tf_cfg["bars_per_hour"] * 24 * 250
+        )
 
         # Release heavy data no longer needed after unified simulation
         del fold_indicators, precomputed_raw_df, best_variant_data, df
@@ -813,18 +1043,25 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         )
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
-        all_trades_binary = [t["result"] for t in all_trades]
         rv_values = [t["rv_at_entry"] for t in all_trades if "rv_at_entry" in t]
 
         # Recalculate metrics from unified trades
         total_trades = len(all_trades)
-        mean_wr = sum(1 for t in all_trades if t["result"] == 1.0) / total_trades if total_trades > 0 else 0.0
+        mean_wr = (
+            sum(1 for t in all_trades if t["result"] == 1.0) / total_trades
+            if total_trades > 0
+            else 0.0
+        )
         mean_pnl = sum(all_trades_pnl) / n_unified_folds if n_unified_folds else 0.0
 
         if total_trades == 0:
             log(1, "SKIP - Unified simulation produced no trades", sym)
             report_done(sym, "no_unified_trades")
-            result = {"symbol": sym, "status": "no_unified_trades", "grid_results": accumulated_grid_results}
+            result = {
+                "symbol": sym,
+                "status": "no_unified_trades",
+                "grid_results": accumulated_grid_results,
+            }
             return result
 
         # === RISK MANAGEMENT PLUGIN ===
@@ -833,20 +1070,31 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         rrr = b_config["rrr"]
         risk_mgr_cls = get_risk_manager(strategy.risk_management)
         risk_mgr = risk_mgr_cls()
+        kelly_binary, kelly_wr, kelly_payoff = kelly_inputs(all_trades, rrr)
         risk_result = risk_mgr.compute_risk_params(
-            all_trades_binary, mean_wr, rrr,
-            rv_values=rv_values if len(rv_values) == len(all_trades_binary) else None,
-            **strategy.risk_params
+            kelly_binary,
+            kelly_wr,
+            kelly_payoff,
+            rv_values=rv_values if len(rv_values) == len(kelly_binary) else None,
+            **strategy.risk_params,
         )
         fk = risk_result["risk_per_trade"]
         circuit_breaker = risk_result["circuit_breaker"]
         risk_adjustment = risk_result["risk_adjustment"]
 
         if risk_adjustment["scale_factor"] < 1.0:
-            log(2, f"Risk adjusted: scale_factor={risk_adjustment['scale_factor']:.2f}", sym)
+            log(
+                2,
+                f"Risk adjusted: scale_factor={risk_adjustment['scale_factor']:.2f}",
+                sym,
+            )
         if circuit_breaker["enabled"]:
-            log(2, f"Circuit Breaker: Pause after {circuit_breaker['pause_after_losses']} losses "
-                   f"for {circuit_breaker['pause_bars']} bars", sym)
+            log(
+                2,
+                f"Circuit Breaker: Pause after {circuit_breaker['pause_after_losses']} losses "
+                f"for {circuit_breaker['pause_bars']} bars",
+                sym,
+            )
 
         # === CAUSAL REPORTING CALIBRATION ===
         # Der Deployment-Call oben kalibriert auf den Trades ALLER Folds des
@@ -857,14 +1105,19 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Für die reported Metriken wird Fold i deshalb nur mit
         # einer auf Folds 0..i-1 kalibrierten Sizing bewertet (Fold 0 entfällt).
         from .causal_reporting import compute_causal_reporting
+
         causal = compute_causal_reporting(
             unified_fold_results, risk_mgr, rrr, strategy.risk_params
         )
         del unified_fold_results
         causal_ok = len(causal["causal_pnl"]) >= 10
         if not causal_ok:
-            log(1, f"  Causal reporting: nur {len(causal['causal_pnl'])} kausale "
-                   f"Trades — Fallback auf naive (nicht-kausale) Metriken", sym)
+            log(
+                1,
+                f"  Causal reporting: nur {len(causal['causal_pnl'])} kausale "
+                f"Trades — Fallback auf naive (nicht-kausale) Metriken",
+                sym,
+            )
 
         # === OVERFITTING METRICS (DSR + PBO) ===
         grid_results_by_fold = {}
@@ -883,31 +1136,52 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             reporting_returns = pnl_to_returns(all_trades_pnl, fk)
             reporting_pnl = all_trades_pnl
         reporting_returns_arr = np.array(reporting_returns)
-        non_ann_sr = float(np.mean(reporting_returns_arr) / np.std(reporting_returns_arr)) if len(reporting_returns_arr) > 1 and np.std(reporting_returns_arr) > 0 else 0.0
+        non_ann_sr = (
+            float(np.mean(reporting_returns_arr) / np.std(reporting_returns_arr))
+            if len(reporting_returns_arr) > 1 and np.std(reporting_returns_arr) > 0
+            else 0.0
+        )
         # Per-trade return statistics of the reporting series (the verdict's DSR inputs).
         return_stats = return_statistics(reporting_returns)
 
-        from .overfitting import compute_overfitting_metrics
+        from .overfitting import compute_overfitting_metrics, count_trials
+
+        # N of the DSR: distinct configurations evaluated (combos across folds, times the
+        # indicator-grid variants the best variant was picked from), not grid rows.
+        n_trials = count_trials(accumulated_grid_results, n_variants)
         try:
             overfitting = compute_overfitting_metrics(
                 trade_returns=reporting_returns,
                 observed_sr=non_ann_sr,
-                n_strategies=len(accumulated_grid_results),
+                n_strategies=n_trials,
                 grid_results_by_fold=grid_results_by_fold,
                 n_trades=len(reporting_pnl),
             )
-        except Exception as e:
+        except (ValueError, TypeError, ArithmeticError) as e:
             log(1, f"  Overfitting metrics failed: {e}", sym)
             overfitting = {
-                "dsr": {"dsr": 0.0, "observed_sr": non_ann_sr, "expected_max_sr": 0.0,
-                         "n_strategies": len(accumulated_grid_results), "is_significant": False},
-                "pbo": {"pbo": None, "n_cscv_splits": 0, "is_overfit": None,
-                         "degradation": None, "logit_mean": None},
+                "dsr": {
+                    "dsr": None,
+                    "observed_sr": non_ann_sr,
+                    "expected_max_sr": None,
+                    "n_strategies": n_trials,
+                    "is_significant": False,
+                    "error": str(e),
+                },
+                "pbo": {
+                    "pbo": None,
+                    "n_cscv_splits": 0,
+                    "is_overfit": None,
+                    "degradation": None,
+                    "logit_mean": None,
+                    "error": str(e),
+                },
             }
         pbo_val = overfitting["pbo"]["pbo"]
-        log(1, f"  DSR={overfitting['dsr']['dsr']:.3f}"
-               f" PBO={pbo_val:.2f}" if pbo_val is not None else
-               f"  DSR={overfitting['dsr']['dsr']:.3f} PBO=n/a", sym)
+        dsr_val = overfitting["dsr"]["dsr"]
+        dsr_txt = f"{dsr_val:.3f}" if dsr_val is not None else "n/a"
+        pbo_txt = f"{pbo_val:.2f}" if pbo_val is not None else "n/a"
+        log(1, f"  DSR={dsr_txt} PBO={pbo_txt} (N={n_trials})", sym)
 
         del grid_results_by_fold
 
@@ -915,18 +1189,28 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         feature_counts = {}
         n_successful_folds = len(all_fold_results)
         for fr in all_fold_results:
-            for feat in (fr.get("selected_features_long") or []) + (fr.get("selected_features_short") or []):
+            for feat in (fr.get("selected_features_long") or []) + (
+                fr.get("selected_features_short") or []
+            ):
                 feature_counts[feat] = feature_counts.get(feat, 0) + 1
 
         feature_stability_details = {
             feat: {"count": count, "stability": count / n_successful_folds}
             for feat, count in sorted(feature_counts.items(), key=lambda x: -x[1])
         }
-        stable_features = [f for f, s in feature_stability_details.items() if s["stability"] >= 0.5]
-        unstable_features = [f for f, s in feature_stability_details.items() if s["stability"] < 0.5]
+        stable_features = [
+            f for f, s in feature_stability_details.items() if s["stability"] >= 0.5
+        ]
+        unstable_features = [
+            f for f, s in feature_stability_details.items() if s["stability"] < 0.5
+        ]
 
         if unstable_features:
-            log(2, f"  Unstable features ({len(unstable_features)}): {unstable_features[:5]}", sym)
+            log(
+                2,
+                f"  Unstable features ({len(unstable_features)}): {unstable_features[:5]}",
+                sym,
+            )
 
         feature_stability = {
             "stable_count": len(stable_features),
@@ -940,7 +1224,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             win_rates,
             pnls,
             per_fold_total_trades,
-            sample_bias_detected, bias_ratios, mean_bias_ratio,
+            sample_bias_detected,
+            bias_ratios,
+            mean_bias_ratio,
             config_inconsistent=config_inconsistent,
             folds_without_bias_ratio=bias["folds_without_bias_ratio"],
         )
@@ -956,29 +1242,40 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "per_fold_risk": causal["per_fold_risk"],
             "n_causal_trades": len(causal["causal_pnl"]),
         }
-        features_list = (unified_candidate.get("selected_features_long") or []) + (unified_candidate.get("selected_features_short") or [])
+        features_list = (unified_candidate.get("selected_features_long") or []) + (
+            unified_candidate.get("selected_features_short") or []
+        )
 
         # Trade analytics (MAE/MFE, SL potential, direction breakdown)
         trade_analytics = _compute_trade_analytics(all_trades_detailed)
         if trade_analytics:
             sl_pot = trade_analytics.get("sl_potential")
             if sl_pot:
-                log(1, f"  SL Potential: {sl_pot['would_reach_tp']}/{sl_pot['losers_analyzed']} "
-                       f"losers would reach TP ({sl_pot['recovery_rate']:.0%})"
-                       + (f", required MAE median={sl_pot['required_mae']['median']:.1f}" if sl_pot.get('required_mae') else ""),
-                    sym)
+                log(
+                    1,
+                    f"  SL Potential: {sl_pot['would_reach_tp']}/{sl_pot['losers_analyzed']} "
+                    f"losers would reach TP ({sl_pot['recovery_rate']:.0%})"
+                    + (
+                        f", required MAE median={sl_pot['required_mae']['median']:.1f}"
+                        if sl_pot.get("required_mae")
+                        else ""
+                    ),
+                    sym,
+                )
             tp_pot = trade_analytics.get("tp_potential")
             if tp_pot:
-                log(1, f"  TP Potential: {tp_pot['with_significant_continuation']}/{tp_pot['winners_analyzed']} "
-                       f"winners had >50% continuation ({tp_pot['continuation_rate']:.0%})"
-                       f", median continuation={tp_pot['continuation_mfe']['median']:.1f}",
-                    sym)
+                log(
+                    1,
+                    f"  TP Potential: {tp_pot['with_significant_continuation']}/{tp_pot['winners_analyzed']} "
+                    f"winners had >50% continuation ({tp_pot['continuation_rate']:.0%})"
+                    f", median continuation={tp_pot['continuation_mfe']['median']:.1f}",
+                    sym,
+                )
 
         # Test period duration (used for annual return, sharpe, etc.)
         # Use all wf_folds (not just successful ones) because unified simulation
         # replays every fold with its causal candidate; untraded leading folds
         # still count in the test period.
-        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(f.test_end - f.test_start for f in wf_folds)
         test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
         # Kausales Reporting bewertet nur Folds i>0 → Fold-0-Testbars ausnehmen
@@ -986,6 +1283,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             reporting_test_bars = sum(f.test_end - f.test_start for f in wf_folds[1:])
         else:
             reporting_test_bars = total_test_bars
+
+        slim_trades_detailed = (
+            slim_trades(all_trades_detailed)
+            if len(all_trades_detailed) == total_trades
+            else []
+        )
 
         # === NO EDGE ===
         if fk <= 0:
@@ -1015,15 +1318,25 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "overfitting": overfitting,
                 "feature_stability": feature_stability,
                 "trade_analytics": trade_analytics,
-                "reason": f"No profitable edge (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
+                "trades_detailed": slim_trades_detailed,
+                "reason": f"No profitable edge (WR={mean_wr * 100:.1f}%, RRR={rrr:.2f})",
+                # The frozen setting, so a portfolio holdout can evaluate this sleeve
+                # after the cutoff although it has no edge on its own.
+                "unified_candidate": unified_candidate,
             }
+            if indicator_variant_label:
+                result["indicator_variant"] = indicator_variant_label
 
             bias_check_result = check_asset_bias(result, verbose=True)
             result["bias_check"] = bias_check_result
 
-            log(1, f"NO_EDGE - WR={mean_wr:.1%}±{std_wr:.1%} RRR={rrr:.2f} "
-                   f"TP={b_config['tp']} SL={b_config['sl']} CT={ct_display:.2f} "
-                   f"Trades={total_trades}", sym)
+            log(
+                1,
+                f"NO_EDGE - WR={mean_wr:.1%}±{std_wr:.1%} RRR={rrr:.2f} "
+                f"TP={b_config['tp']} SL={b_config['sl']} CT={ct_display:.2f} "
+                f"Trades={total_trades}",
+                sym,
+            )
 
             report_done(sym, "no_edge")
             return result
@@ -1032,21 +1345,35 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_summary = monte_carlo_summary(reporting_pnl, reporting_returns)
+        mc_summary = monte_carlo_summary(
+            reporting_pnl, reporting_returns, seed=ctx.run_seed
+        )
 
-        log(2, f"  Monte Carlo: p={mc_summary['p_value']:.3f}, "
-               f"Equity median={mc_summary['equity_median']:.1f}, "
-               f"bankruptcy={mc_summary['bankruptcy_rate']:.1%} ({time.time()-t_mc:.1f}s)", sym)
+        log(
+            2,
+            f"  Monte Carlo: p={mc_summary['p_value']:.3f}, "
+            f"Equity median={mc_summary['equity_median']:.1f}, "
+            f"bankruptcy={mc_summary['bankruptcy_rate']:.1%} ({time.time() - t_mc:.1f}s)",
+            sym,
+        )
 
         # Sharpe/Calmar (needed for both not_significant and ok paths)
-        actual_trades_per_year = len(reporting_pnl) * bars_per_year / reporting_test_bars if reporting_test_bars > 0 else len(reporting_pnl)
-        sharpe = calculate_sharpe_ratio(reporting_returns, trades_per_year=actual_trades_per_year)
-        calmar = calculate_calmar_from_returns(reporting_returns)
+        actual_trades_per_year = (
+            len(reporting_pnl) * bars_per_year / reporting_test_bars
+            if reporting_test_bars > 0
+            else len(reporting_pnl)
+        )
+        sharpe = calculate_sharpe_ratio(
+            reporting_returns, trades_per_year=actual_trades_per_year
+        )
+        calmar = calculate_calmar_from_returns(
+            reporting_returns,
+            years=reporting_test_bars / bars_per_year if bars_per_year else None,
+        )
 
         # === TIME-BASED EQUITY REPLAY (Reporting, see equity_replay) ===
-        detailed_aligned = (
-            len(all_trades_detailed) == total_trades
-            and all(t.get("exit_time") for t in all_trades_detailed)
+        detailed_aligned = len(all_trades_detailed) == total_trades and all(
+            t.get("exit_time") for t in all_trades_detailed
         )
         reporting_equity = None
         if causal_ok and detailed_aligned:
@@ -1062,10 +1389,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "pnl_trace": reporting_pnl,
             "equity": reporting_equity,
         }
-        slim_trades_detailed = (
-            slim_trades(all_trades_detailed) if len(all_trades_detailed) == total_trades else []
-        )
-
         ct_long, ct_short, ct_display = _parse_ct_value(b_config["ct"])
 
         # === NOT SIGNIFICANT ===
@@ -1103,14 +1426,23 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "trades_detailed": slim_trades_detailed,
                 "reason": f"Not statistically significant (p={mc_summary['p_value']:.3f})",
                 "grid_results": accumulated_grid_results,
+                # The frozen setting, so a portfolio holdout can evaluate this sleeve
+                # after the cutoff although it is not significant on its own.
+                "unified_candidate": unified_candidate,
             }
+            if indicator_variant_label:
+                result["indicator_variant"] = indicator_variant_label
 
             bias_check_result = check_asset_bias(result, verbose=True)
             result["bias_check"] = bias_check_result
 
-            log(1, f"NOT_SIGNIFICANT - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
-                   f"p={mc_summary['p_value']:.3f} TP={b_config['tp']} SL={b_config['sl']} "
-                   f"CT={ct_display:.2f} Trades={total_trades}", sym)
+            log(
+                1,
+                f"NOT_SIGNIFICANT - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
+                f"p={mc_summary['p_value']:.3f} TP={b_config['tp']} SL={b_config['sl']} "
+                f"CT={ct_display:.2f} Trades={total_trades}",
+                sym,
+            )
 
             report_done(sym, "not_significant")
             return result
@@ -1148,6 +1480,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "sharpe": sharpe,
             "calmar": calmar,
             "currencies": asset.currencies,
+            "seed": ctx.run_seed,
             "walk_forward": wf_summary,
             "monte_carlo": mc_summary,
             "reporting": reporting,
@@ -1162,11 +1495,19 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if indicator_variant_label:
             result["indicator_variant"] = indicator_variant_label
 
-        log(1, f"OK (Walk-Forward) - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
-               f"p={mc_summary['p_value']:.3f} Trades={total_trades} ({time.time()-t_start:.1f}s)", sym)
+        log(
+            1,
+            f"OK (Walk-Forward) - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
+            f"p={mc_summary['p_value']:.3f} Trades={total_trades} ({time.time() - t_start:.1f}s)",
+            sym,
+        )
 
         if sample_bias_detected:
-            log(1, f"  NOTE: Sample bias detected in {sum(1 for r in bias_ratios if r > 2.0)} folds", sym)
+            log(
+                1,
+                f"  NOTE: Sample bias detected in {sum(1 for r in bias_ratios if r > 2.0)} folds",
+                sym,
+            )
 
         # === LIVE BIAS CHECK ===
         bias_check_result = check_asset_bias(result, verbose=True)
@@ -1179,6 +1520,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         import traceback
         import sys
         from fwbg.utils.progress import report_log
+
         tb = traceback.format_exc()
         print(f"[{sym}] FEHLER: {e}\n{tb}", file=sys.stderr, flush=True)
         report_log(sym, "processing", "error", f"{e}", traceback=tb)
@@ -1186,4 +1528,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         result = {"symbol": sym, "status": "error", "error": f"{e}\n{tb}"}
         return result
     finally:
+        if data_checks is not None:
+            result.setdefault("data_checks", data_checks)
         result["logs"] = stop_log_capture()

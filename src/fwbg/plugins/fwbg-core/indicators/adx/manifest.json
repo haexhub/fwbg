@@ -1,7 +1,7 @@
 {
   "name": "adx",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "ADX (Average Directional Index) - trend strength measurement on 0-100 scale",
   "phase": "indicators",
-  "benefits_from_stationary": true
+  "benefits_from_stationary": false
 }

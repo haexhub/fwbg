@@ -11,7 +11,16 @@ Struktur:
         datasource/          ← aufbereitete CSV-Dateien
       alphavantage/
         config.json
+
+Timestamp convention: bar timestamps are **naive UTC** (bar start time) everywhere in
+fwbg. Datasource CSVs store them in the ``T`` column as ``YYYY-MM-DD HH:MM:SS`` in UTC,
+the loaders (``fwbg.data.loader.load_data_aligned``) read them as they are without any
+timezone conversion, and exchange-local logic (``fwbg.data.trading_hours``,
+``fwbg.data.session_bars``) localizes them from UTC. Local wall-clock times would repeat
+for an hour at the autumn DST change, so the ETL (:func:`utc_timestamps`) converts to UTC
+and never writes local time.
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
@@ -20,9 +29,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import json
 import logging
+import os
 import re
 
 import pandas as pd
+
+from fwbg.data.atomic import write_csv_atomic
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +42,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class AssetInfo:
     """Ein verfügbares Asset in einer Datenquelle."""
+
     symbol: str
     timeframes: List[str]
     date_from: Optional[date]
@@ -38,9 +51,76 @@ class AssetInfo:
     source_type: str
 
 
+def _localize_to_utc(parsed: pd.Series, zone: str, label: str) -> pd.Series:
+    """Interpret naive wall-clock times in ``zone`` and convert them to naive UTC.
+
+    The repeated hour at the autumn DST change is kept for both occurrences: the
+    first occurrence is read as daylight time, the second as standard time
+    (``ambiguous="infer"``; if that cannot be inferred, the first listed row of a
+    repeated wall-clock time is daylight time). Wall-clock times inside the spring
+    DST gap never existed; those rows are dropped with a warning.
+    """
+    try:
+        local = parsed.dt.tz_localize(zone, ambiguous="infer", nonexistent="NaT")
+    except ValueError:
+        is_daylight = ~parsed.duplicated(keep="first")
+        local = parsed.dt.tz_localize(
+            zone, ambiguous=is_daylight.to_numpy(), nonexistent="NaT"
+        )
+    missing = int(local.isna().sum() - parsed.isna().sum())
+    if missing:
+        log.warning(
+            f"{label}: {missing} Zeilen mit nicht existierender Ortszeit "
+            f"(DST-Lücke in {zone}) verworfen."
+        )
+    return local.dt.tz_convert("UTC").dt.tz_localize(None)
+
+
+def utc_timestamps(
+    df: pd.DataFrame,
+    column: str,
+    unit: str = "",
+    timezone: str = "",
+    label: str = "",
+) -> pd.DataFrame:
+    """Replace ``column`` by naive-UTC datetimes (the fwbg timestamp convention).
+
+    * ``unit`` ``"s"``/``"ms"``: Unix epoch, already UTC (``timezone`` is irrelevant).
+    * otherwise the values are date strings; ``timezone`` (IANA name) is the zone they
+      are written in and is converted to UTC, without losing either hour of the
+      autumn DST change. Strings that carry their own UTC offset are converted by it.
+      Without ``timezone`` they are taken as UTC.
+
+    Rows whose timestamp is invalid (a local time that never existed) or repeats an
+    earlier one are dropped with a warning. Returns a new frame.
+    """
+    out = df.copy()
+    if unit in ("s", "ms"):
+        out[column] = pd.to_datetime(out[column], unit=unit, utc=True).dt.tz_localize(
+            None
+        )
+    else:
+        parsed = pd.to_datetime(out[column])
+        if parsed.dt.tz is not None:
+            parsed = parsed.dt.tz_convert("UTC").dt.tz_localize(None)
+        elif timezone:
+            parsed = _localize_to_utc(parsed, timezone, label)
+        out[column] = parsed
+    before = len(out)
+    out = out[out[column].notna()]
+    out = out.drop_duplicates(subset=[column], keep="first")
+    dropped = before - len(out)
+    if dropped:
+        log.warning(
+            f"{label}: {dropped} Zeilen mit ungültigem oder doppeltem Timestamp verworfen."
+        )
+    return out
+
+
 # Default Basis-Pfad für Daten — resolved from workspace env vars at import time
 def _default_data_root() -> Path:
     import os
+
     data_dir = os.environ.get("FWBG_DATA_DIR")
     if data_dir:
         return Path(data_dir)
@@ -49,12 +129,14 @@ def _default_data_root() -> Path:
         return Path(workspace) / "data"
     return Path.home() / "fwbg" / "data"
 
+
 DEFAULT_DATA_ROOT = _default_data_root()
 
 
 @dataclass
 class LoadResult:
     """Standardisiertes Ergebnis von DataSource.load()."""
+
     data: Dict[str, pd.DataFrame] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     source_name: str = ""
@@ -62,6 +144,7 @@ class LoadResult:
 
 class SourceType(str, Enum):
     """Typ der Datenquelle."""
+
     CSV = "csv"
     REST = "rest"
     WEBSOCKET = "websocket"
@@ -71,6 +154,7 @@ class SourceType(str, Enum):
 @dataclass
 class DataSourceConfig(ABC):
     """Basis-Konfiguration für alle Datenquellen."""
+
     name: str
     source_type: SourceType = field(init=False)
     description: str = ""
@@ -98,22 +182,23 @@ class DataSourceConfig(ABC):
 @dataclass
 class CSVSourceConfig(DataSourceConfig):
     """Konfiguration für CSV-Datenquellen."""
+
     path: Path = field(default_factory=lambda: Path("data"))
     file_pattern: str = "{symbol}_{timeframe}.csv"
     timeframe_map: Dict[str, str] = field(default_factory=dict)
     # ETL: raw → datasource conversion
     raw_path: Path = field(default=None)
     raw_pattern: str = "{raw_symbol}_m15.csv"
-    timestamp_unit: str = ""          # "s", "ms", or "" for ISO/auto
+    timestamp_unit: str = ""  # "s", "ms", or "" for ISO/auto
     symbol_map: Dict[str, str] = field(default_factory=dict)  # raw_prefix → symbol
-    timezone: str = ""                # IANA timezone, e.g. "Europe/Berlin"
+    timezone: str = ""  # IANA timezone, e.g. "Europe/Berlin"
     # Column mapping (raw CSV column names → standard TOHLCV)
     date_col: str = "timestamp"
     open_col: str = "open"
     high_col: str = "high"
     low_col: str = "low"
     close_col: str = "close"
-    volume_col: str = ""              # empty = no volume column, fill with 0
+    volume_col: str = ""  # empty = no volume column, fill with 0
 
     def __post_init__(self):
         self.source_type = SourceType.CSV
@@ -141,8 +226,14 @@ class CSVSourceConfig(DataSourceConfig):
         if self.timezone:
             d["timezone"] = self.timezone
         # Column mapping — only persist non-defaults
-        col_defaults = {"date_col": "timestamp", "open_col": "open", "high_col": "high",
-                        "low_col": "low", "close_col": "close", "volume_col": ""}
+        col_defaults = {
+            "date_col": "timestamp",
+            "open_col": "open",
+            "high_col": "high",
+            "low_col": "low",
+            "close_col": "close",
+            "volume_col": "",
+        }
         for attr, default in col_defaults.items():
             val = getattr(self, attr)
             if val != default:
@@ -162,8 +253,8 @@ class CSVSourceConfig(DataSourceConfig):
             return self.raw_pattern, lambda stem: stem
 
         idx = self.raw_pattern.index(placeholder)
-        suffix = self.raw_pattern[idx + len(placeholder):]  # e.g. "_m15.csv"
-        suffix_no_ext = suffix.removesuffix(".csv")          # e.g. "_m15"
+        suffix = self.raw_pattern[idx + len(placeholder) :]  # e.g. "_m15.csv"
+        suffix_no_ext = suffix.removesuffix(".csv")  # e.g. "_m15"
         glob_pat = self.raw_pattern.replace(placeholder, "*")
 
         def extract_prefix(stem: str) -> str:
@@ -173,7 +264,9 @@ class CSVSourceConfig(DataSourceConfig):
 
         return glob_pat, extract_prefix
 
-    def prepare(self, glob_override: str = "", excludes: List[str] | None = None) -> List[str]:
+    def prepare(
+        self, glob_override: str = "", excludes: List[str] | None = None
+    ) -> List[str]:
         """ETL: Konvertiert Rohdaten (raw_path) ins Standard-Format (path).
 
         Uses raw_pattern (or glob_override) for file discovery, symbol_map for
@@ -202,6 +295,7 @@ class CSVSourceConfig(DataSourceConfig):
 
         if glob_override:
             raw_files = sorted(raw_dir.glob(glob_override))
+
             # With a custom glob, prefix = full stem (user manages symbol_map accordingly)
             def extract_prefix(stem: str) -> str:
                 return stem
@@ -217,6 +311,19 @@ class CSVSourceConfig(DataSourceConfig):
         if exclude_set:
             raw_files = [f for f in raw_files if f.name not in exclude_set]
 
+        # {timeframe} in file_pattern comes from the raw pattern's suffix
+        # ("{raw_symbol}_m15.csv" -> "m15", then timeframe_map as for lookups).
+        raw_timeframe = ""
+        if glob_override == "" and "{raw_symbol}" in self.raw_pattern:
+            suffix = self.raw_pattern.split("{raw_symbol}", 1)[1]
+            raw_timeframe = suffix.removesuffix(".csv").lstrip("_")
+        if "{timeframe}" in self.file_pattern and not raw_timeframe:
+            log.warning(
+                f"prepare(): file_pattern {self.file_pattern!r} braucht einen "
+                f"Timeframe, raw_pattern {self.raw_pattern!r} liefert keinen."
+            )
+            return []
+
         converted = []
 
         for raw_file in raw_files:
@@ -231,24 +338,20 @@ class CSVSourceConfig(DataSourceConfig):
 
                 # --- Timestamp ---
                 if self.date_col not in df.columns:
-                    log.warning(f"prepare(): Spalte '{self.date_col}' nicht in {raw_file.name}")
+                    log.warning(
+                        f"prepare(): Spalte '{self.date_col}' nicht in {raw_file.name}"
+                    )
                     continue
 
-                if self.timestamp_unit in ("s", "ms"):
-                    ts = pd.to_datetime(df[self.date_col], unit=self.timestamp_unit, utc=True)
-                    if self.timezone:
-                        ts = ts.dt.tz_convert(self.timezone)
-                    df["T"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
-                    if self.timezone:
-                        before = len(df)
-                        df = df.drop_duplicates(subset=["T"], keep="first")
-                        dropped = before - len(df)
-                        if dropped:
-                            log.warning(
-                                f"prepare(): {symbol}: {dropped} Bars durch DST-Rückfall "
-                                f"entfernt (doppelte naive Timestamps nach {self.timezone}-"
-                                f"Konvertierung)."
-                            )
+                if self.timestamp_unit in ("s", "ms") or self.timezone:
+                    df = utc_timestamps(
+                        df,
+                        self.date_col,
+                        self.timestamp_unit,
+                        self.timezone,
+                        label=f"prepare(): {symbol}",
+                    )
+                    df["T"] = df[self.date_col].dt.strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     df["T"] = df[self.date_col].astype(str)
 
@@ -256,7 +359,9 @@ class CSVSourceConfig(DataSourceConfig):
                 ohlc_cols = [self.open_col, self.high_col, self.low_col, self.close_col]
                 missing = [c for c in ohlc_cols if c not in df.columns]
                 if missing:
-                    log.warning(f"prepare(): {raw_file.name}: fehlende Spalten {missing}")
+                    log.warning(
+                        f"prepare(): {raw_file.name}: fehlende Spalten {missing}"
+                    )
                     continue
 
                 out = df[["T"] + ohlc_cols].copy()
@@ -269,9 +374,8 @@ class CSVSourceConfig(DataSourceConfig):
                     out["V"] = 0
 
                 # --- Write output ---
-                tf_part = self.file_pattern.replace("{symbol}_", "").replace(".csv", "")
-                dst = out_dir / f"{symbol}_{tf_part}.csv"
-                out.to_csv(dst, index=False)
+                dst = self.get_file_path(symbol, raw_timeframe or None)
+                write_csv_atomic(out, dst, index=False)
                 log.info(f"prepare(): {raw_file.name} → {dst.name} ({len(out)} Bars)")
                 converted.append(symbol)
 
@@ -284,7 +388,11 @@ class CSVSourceConfig(DataSourceConfig):
         """Gibt den vollständigen Dateipfad für ein Symbol zurück."""
         tf_value = self.timeframe_map.get(timeframe, timeframe) if timeframe else ""
         filename = self.file_pattern.format(symbol=symbol, timeframe=tf_value)
-        return self.path / filename
+        path = self.path / filename
+        # Lexical check (not resolve()) so symlinked data files keep working.
+        if not Path(os.path.abspath(path)).is_relative_to(os.path.abspath(self.path)):
+            raise ValueError(f"Data file escapes source directory: {filename!r}")
+        return path
 
     def exists(self) -> bool:
         """Prüft ob der Daten-Pfad existiert."""
@@ -300,10 +408,8 @@ class CSVSourceConfig(DataSourceConfig):
         """Baut einen Regex aus file_pattern mit benannten Gruppen für symbol + timeframe."""
         try:
             escaped = re.escape(self.file_pattern.removesuffix(".csv"))
-            pattern = (
-                escaped
-                .replace(r"\{symbol\}", r"(?P<symbol>.+?)")
-                .replace(r"\{timeframe\}", r"(?P<timeframe>.+)")
+            pattern = escaped.replace(r"\{symbol\}", r"(?P<symbol>.+?)").replace(
+                r"\{timeframe\}", r"(?P<timeframe>.+)"
             )
             return re.compile(f"^{pattern}$")
         except re.error:
@@ -313,6 +419,7 @@ class CSVSourceConfig(DataSourceConfig):
         """Liest erstes und letztes Datum aus einer CSV-Datei (nur erste Spalte)."""
         try:
             import pandas as pd
+
             df = pd.read_csv(path, usecols=[0], index_col=0, parse_dates=True)
             if df.empty:
                 return None, None
@@ -342,14 +449,16 @@ class CSVSourceConfig(DataSourceConfig):
             timeframes = sorted(tf_map.keys())
             all_froms = [v[0] for v in tf_map.values() if v[0]]
             all_tos = [v[1] for v in tf_map.values() if v[1]]
-            assets.append(AssetInfo(
-                symbol=symbol,
-                timeframes=timeframes,
-                date_from=min(all_froms) if all_froms else None,
-                date_to=max(all_tos) if all_tos else None,
-                source=self.name,
-                source_type="csv",
-            ))
+            assets.append(
+                AssetInfo(
+                    symbol=symbol,
+                    timeframes=timeframes,
+                    date_from=min(all_froms) if all_froms else None,
+                    date_to=max(all_tos) if all_tos else None,
+                    source=self.name,
+                    source_type="csv",
+                )
+            )
         return assets
 
     def load(self, items: Dict[str, str], **params) -> LoadResult:
@@ -364,12 +473,21 @@ class CSVSourceConfig(DataSourceConfig):
                 raw_df = pd.read_csv(csv_path, nrows=1)
                 cols = list(raw_df.columns)
                 date_col = None
-                for candidate in ["DATE", "Datetime", "datetime", "Time", "time", "Date"]:
+                for candidate in [
+                    "DATE",
+                    "Datetime",
+                    "datetime",
+                    "Time",
+                    "time",
+                    "Date",
+                ]:
                     if candidate in cols:
                         date_col = candidate
                         break
                 if date_col:
-                    df = pd.read_csv(csv_path, parse_dates=[date_col], index_col=date_col)
+                    df = pd.read_csv(
+                        csv_path, parse_dates=[date_col], index_col=date_col
+                    )
                 else:
                     df = pd.read_csv(csv_path, parse_dates=[0], index_col=0)
                 data[prefix] = df
@@ -389,7 +507,7 @@ class CSVSourceConfig(DataSourceConfig):
                 data_path=str(self.path),
                 file_pattern=pattern,
                 timeframe=timeframe,
-                **kwargs
+                **kwargs,
             )
 
         raise NotImplementedError(
@@ -401,6 +519,7 @@ class CSVSourceConfig(DataSourceConfig):
 @dataclass
 class RESTSourceConfig(DataSourceConfig):
     """Konfiguration für REST API Datenquellen."""
+
     base_url: str = ""
     api_key: str = ""
     api_key_param: str = "apikey"
@@ -467,6 +586,7 @@ class RESTSourceConfig(DataSourceConfig):
 @dataclass
 class WebSocketSourceConfig(DataSourceConfig):
     """Konfiguration für WebSocket Streaming Datenquellen."""
+
     url: str = ""
     headers: Dict[str, str] = field(default_factory=dict)
     subscribe_message: Dict[str, Any] = field(default_factory=dict)
@@ -490,7 +610,9 @@ class WebSocketSourceConfig(DataSourceConfig):
             "max_reconnect_attempts": self.max_reconnect_attempts,
         }
 
-    def get_subscribe_message(self, symbol: str, timeframe: str = "1m") -> Dict[str, Any]:
+    def get_subscribe_message(
+        self, symbol: str, timeframe: str = "1m"
+    ) -> Dict[str, Any]:
         msg_str = json.dumps(self.subscribe_message)
         msg_str = msg_str.replace("{symbol}", symbol.lower())
         msg_str = msg_str.replace("{timeframe}", timeframe)
@@ -518,6 +640,7 @@ class WebSocketSourceConfig(DataSourceConfig):
 @dataclass
 class DBSourceConfig(DataSourceConfig):
     """Konfiguration für Datenbank-Datenquellen."""
+
     connection_string: str = ""
     driver: str = "sqlalchemy"
 
@@ -767,7 +890,8 @@ def list_data_sources(source_type: SourceType = None) -> List[str]:
     if source_type is None:
         return list(_DATA_SOURCES.keys())
     return [
-        name for name, source in _DATA_SOURCES.items()
+        name
+        for name, source in _DATA_SOURCES.items()
         if source.source_type == source_type
     ]
 

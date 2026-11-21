@@ -54,16 +54,6 @@ class TestXGBoostHyperparameters:
                 "groups": ["trend"],
                 "selection": "boruta"
             },
-            "grids": {
-                "FOREX": {
-                    "tp": [1.0, 2.0],
-                    "sl": [1.0],
-                    "ct": [0.5],
-                    "timeout_bars": [None]
-                }
-            },
-            "exit_strategy": "fixed",
-            "exit_params": {},
             "resources": {
                 "max_concurrent_assets": 1
             }
@@ -127,9 +117,6 @@ class TestXGBoostHyperparameters:
             "validation": {"method": "walk_forward", "folds": 3, "oos_size": 1000, "min_trades": 30},
             "filters": {"min_rrr": 1.0, "min_trades": 30},
             "features": {"groups": ["trend"], "selection": "boruta"},
-            "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
-            "exit_strategy": "fixed",
-            "exit_params": {},
             "resources": {
                 "max_concurrent_assets": 1
             }
@@ -160,9 +147,6 @@ class TestXGBoostHyperparameters:
             "validation": {"method": "walk_forward", "folds": 3, "oos_size": 1000, "min_trades": 30},
             "filters": {"min_rrr": 1.0, "min_trades": 30},
             "features": {"groups": ["trend"], "selection": "boruta"},
-            "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
-            "exit_strategy": "fixed",
-            "exit_params": {},
             "resources": {
                 "max_concurrent_assets": 1
             }
@@ -210,9 +194,6 @@ class TestXGBoostHyperparameters:
             "validation": {"method": "walk_forward", "folds": 3, "oos_size": 1000, "min_trades": 30},
             "filters": {"min_rrr": 1.0, "min_trades": 30},
             "features": {"groups": ["trend"], "selection": "boruta"},
-            "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
-            "exit_strategy": "fixed",
-            "exit_params": {},
             "resources": {
                 "max_concurrent_assets": 1
             }

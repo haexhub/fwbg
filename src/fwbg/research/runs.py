@@ -296,6 +296,14 @@ def run_gated(
     return result
 
 
+def denial_payload(denials: Sequence[Denial]) -> list[dict[str, Any]]:
+    """Each denial as ``{"code", "status", "message"}`` with its HTTP status."""
+    return [
+        {"code": d.code.value, "status": d.code.http_status, "message": d.message}
+        for d in denials
+    ]
+
+
 def check_result(
     denials: Sequence[Denial] = (),
     decision: Decision | None = None,
@@ -305,13 +313,7 @@ def check_result(
     holdout cutoff (``None`` for an iteration), or refused with every denial and its
     HTTP status."""
     if denials:
-        return {
-            "allowed": False,
-            "denials": [
-                {"code": d.code.value, "status": d.code.http_status, "message": d.message}
-                for d in denials
-            ],
-        }
+        return {"allowed": False, "denials": denial_payload(denials)}
     assert decision is not None
     return {
         "allowed": True,

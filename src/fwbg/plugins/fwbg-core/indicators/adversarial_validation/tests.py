@@ -1,4 +1,5 @@
 """Tests for Adversarial Validation indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -54,15 +55,22 @@ def regime_shift_df():
     np.random.seed(42)
     n = 300
     dates = pd.date_range("2020-01-01", periods=n, freq="h")
-    close = np.concatenate([
-        100 + np.cumsum(np.random.randn(150) * 0.2),
-        100 + np.cumsum(np.random.randn(150) * 2.0),
-    ])
+    close = np.concatenate(
+        [
+            100 + np.cumsum(np.random.randn(150) * 0.2),
+            100 + np.cumsum(np.random.randn(150) * 2.0),
+        ]
+    )
     return pd.DataFrame(
         {
-            "O": close, "H": close + 0.5, "L": close - 0.5, "C": close,
+            "O": close,
+            "H": close + 0.5,
+            "L": close - 0.5,
+            "C": close,
             "V": np.ones(n) * 1000,
-            "feat_1": np.concatenate([np.random.randn(150) * 0.5, np.random.randn(150) * 5.0]),
+            "feat_1": np.concatenate(
+                [np.random.randn(150) * 0.5, np.random.randn(150) * 5.0]
+            ),
             "feat_2": np.concatenate([np.random.randn(150), np.random.randn(150) + 10]),
             "feat_3": np.concatenate([np.random.randn(150), np.random.randn(150)]),
         },
@@ -79,7 +87,10 @@ def stable_df():
     close = 100 + np.cumsum(np.random.randn(n) * 0.5)
     return pd.DataFrame(
         {
-            "O": close, "H": close + 0.5, "L": close - 0.5, "C": close,
+            "O": close,
+            "H": close + 0.5,
+            "L": close - 0.5,
+            "C": close,
             "V": np.ones(n) * 1000,
             "feat_1": np.random.randn(n),
             "feat_2": np.random.randn(n),
@@ -98,29 +109,44 @@ class TestSelectFeatureColumns:
     """Validate feature column selection logic."""
 
     def test_excludes_ohlcv(self):
-        df = pd.DataFrame({
-            "O": [1], "H": [2], "L": [3], "C": [4], "V": [5],
-            "trend_ema": [6], "mom_rsi": [7],
-        })
+        df = pd.DataFrame(
+            {
+                "O": [1],
+                "H": [2],
+                "L": [3],
+                "C": [4],
+                "V": [5],
+                "trend_ema": [6],
+                "mom_rsi": [7],
+            }
+        )
         cols = _select_feature_columns(df, [])
         assert "O" not in cols
         assert "trend_ema" in cols
         assert "mom_rsi" in cols
 
     def test_excludes_specified_prefixes(self):
-        df = pd.DataFrame({
-            "O": [1], "C": [2],
-            "adv_auc_100": [0.5], "trend_ema": [3],
-        })
+        df = pd.DataFrame(
+            {
+                "O": [1],
+                "C": [2],
+                "adv_auc_100": [0.5],
+                "trend_ema": [3],
+            }
+        )
         cols = _select_feature_columns(df, ["adv_"])
         assert "adv_auc_100" not in cols
         assert "trend_ema" in cols
 
     def test_excludes_non_numeric(self):
-        df = pd.DataFrame({
-            "O": [1], "C": [2],
-            "label": ["buy"], "score": [0.5],
-        })
+        df = pd.DataFrame(
+            {
+                "O": [1],
+                "C": [2],
+                "label": ["buy"],
+                "score": [0.5],
+            }
+        )
         cols = _select_feature_columns(df, [])
         assert "label" not in cols
         assert "score" in cols
@@ -140,7 +166,9 @@ class TestComputeAdversarialAuc:
         old = data[:50]
         new = data[50:]
         auc, _ = _compute_adversarial_auc(old, new)
-        assert 0.3 <= auc <= 0.8, f"Identical distributions should yield AUC ~0.5, got {auc}"
+        assert 0.3 <= auc <= 0.8, (
+            f"Identical distributions should yield AUC ~0.5, got {auc}"
+        )
 
     def test_completely_different_distributions(self):
         """Clearly separable distributions → AUC near 1.0."""
@@ -195,8 +223,13 @@ class TestFeatureColumns:
 
     def test_all_expected_columns_present(self, indicator, sample_df):
         result = indicator.compute(sample_df, windows=[100], step=10)
-        for suffix in ["auc", "drift_score", "stability",
-                        "max_feature_importance", "drift_acceleration"]:
+        for suffix in [
+            "auc",
+            "drift_score",
+            "stability",
+            "max_feature_importance",
+            "drift_acceleration",
+        ]:
             col = f"adv_{suffix}_100"
             assert col in result.columns, f"Missing: {col}"
 
@@ -282,7 +315,9 @@ class TestDistributionShiftDetection:
         result = indicator.compute(stable_df, windows=[100], step=5)
         auc = result["adv_auc_100"].dropna()
         mean_auc = auc.mean()
-        assert mean_auc < 0.75, f"Stable regime AUC should be < 0.75, got {mean_auc:.3f}"
+        assert mean_auc < 0.75, (
+            f"Stable regime AUC should be < 0.75, got {mean_auc:.3f}"
+        )
 
     def test_drift_score_bounded_zero_one(self, indicator, sample_df):
         result = indicator.compute(sample_df, windows=[100], step=10)
@@ -335,9 +370,13 @@ class TestEdgeCases:
         n = 100
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+            },
             index=dates,
         )
         result = indicator.compute(df)
@@ -348,10 +387,15 @@ class TestEdgeCases:
         n = 100
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n),
-             "f1": np.random.randn(n), "f2": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+                "f1": np.random.randn(n),
+                "f2": np.random.randn(n),
+            },
             index=dates,
         )
         result = indicator.compute(df)
@@ -363,11 +407,17 @@ class TestEdgeCases:
         n = 30
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n),
-             "f1": np.random.randn(n), "f2": np.random.randn(n),
-             "f3": np.random.randn(n), "f4": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+                "f1": np.random.randn(n),
+                "f2": np.random.randn(n),
+                "f3": np.random.randn(n),
+                "f4": np.random.randn(n),
+            },
             index=dates,
         )
         result = indicator.compute(df, windows=[20], step=5)
@@ -386,11 +436,16 @@ class TestEdgeCases:
         n = 200
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n),
-             "f1": np.random.randn(n), "f2": np.random.randn(n),
-             "f3": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+                "f1": np.random.randn(n),
+                "f2": np.random.randn(n),
+                "f3": np.random.randn(n),
+            },
             index=dates,
         )
         df.iloc[30:35, df.columns.get_loc("f1")] = np.nan
@@ -433,9 +488,13 @@ class TestParameterVariation:
         np.random.seed(42)
         n = 200
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
-        data = {"O": np.random.randn(n), "H": np.random.randn(n),
-                "L": np.random.randn(n), "C": np.random.randn(n),
-                "V": np.random.randn(n)}
+        data = {
+            "O": np.random.randn(n),
+            "H": np.random.randn(n),
+            "L": np.random.randn(n),
+            "C": np.random.randn(n),
+            "V": np.random.randn(n),
+        }
         # Add 40 feature columns (> default max_features=30)
         for i in range(40):
             data[f"feat_{i}"] = np.random.randn(n)
@@ -455,6 +514,7 @@ class TestPluginIntegration:
 
     def test_plugin_discoverable(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:adversarial_validation")
@@ -469,4 +529,126 @@ class TestPluginIntegration:
 
     def test_metadata(self, indicator):
         assert indicator.name == "adversarial_validation"
-        assert indicator.version == "1.0.0"
+        assert indicator.version == "1.1.0"
+
+
+# ---------------------------------------------------------------------------
+# Out-of-sample AUC and column selection
+# ---------------------------------------------------------------------------
+
+
+def _reference_blocked_cv_auc(old, new, n_folds=4):
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+    from sklearn.preprocessing import StandardScaler
+
+    aucs = []
+    for k in range(n_folds):
+        o_blocks = np.array_split(np.arange(len(old)), n_folds)
+        n_blocks = np.array_split(np.arange(len(new)), n_folds)
+        o_te, n_te = o_blocks[k], n_blocks[k]
+        o_tr = np.setdiff1d(np.arange(len(old)), o_te)
+        n_tr = np.setdiff1d(np.arange(len(new)), n_te)
+        X_tr = np.vstack([old[o_tr], new[n_tr]])
+        y_tr = np.r_[np.zeros(len(o_tr)), np.ones(len(n_tr))]
+        X_te = np.vstack([old[o_te], new[n_te]])
+        y_te = np.r_[np.zeros(len(o_te)), np.ones(len(n_te))]
+        sc = StandardScaler().fit(X_tr)
+        m = LogisticRegression(max_iter=100, solver="liblinear", C=1.0)
+        m.fit(sc.transform(X_tr), y_tr)
+        aucs.append(roc_auc_score(y_te, m.decision_function(sc.transform(X_te))))
+    return float(np.mean(aucs))
+
+
+class TestOutOfSampleAuc:
+    def test_noise_with_many_columns_is_not_separable(self):
+        """30 noise columns, 50 + 50 rows: in-sample AUC saturates, CV AUC ~ 0.5."""
+        aucs = []
+        for seed in range(15):
+            rng = np.random.default_rng(seed)
+            data = rng.normal(size=(100, 30))
+            auc, _ = _compute_adversarial_auc(data[:50], data[50:])
+            aucs.append(auc)
+        assert np.mean(aucs) == pytest.approx(0.5, abs=0.06)
+        assert max(aucs) < 0.7
+
+    def test_matches_reference_blocked_cv(self):
+        rng = np.random.default_rng(0)
+        old = rng.normal(size=(60, 4))
+        new = rng.normal(size=(60, 4)) + np.array([0.8, 0.0, 0.0, 0.0])
+        auc, imp = _compute_adversarial_auc(old.copy(), new.copy())
+        assert auc == pytest.approx(_reference_blocked_cv_auc(old, new), abs=1e-9)
+        assert 0.6 < auc < 1.0
+        assert imp > 0
+
+    def test_real_shift_is_still_detected(self):
+        rng = np.random.default_rng(1)
+        old = rng.normal(size=(50, 5))
+        new = rng.normal(size=(50, 5)) + 3
+        auc, _ = _compute_adversarial_auc(old, new)
+        assert auc > 0.95
+
+    def test_indicator_noise_stays_near_half(self, indicator):
+        rng = np.random.default_rng(7)
+        n = 400
+        df = pd.DataFrame(
+            {
+                "O": 100.0,
+                "H": 101.0,
+                "L": 99.0,
+                "C": 100.0,
+                "V": 1000.0,
+                **{f"f{i}": rng.normal(size=n) for i in range(30)},
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
+        out = indicator.compute(df, windows=[100], step=20)
+        assert out["adv_auc_100"].dropna().mean() < 0.62
+
+
+class TestColumnSelectionExclusions:
+    def test_excludes_overlays_and_labels(self):
+        df = pd.DataFrame(
+            {
+                "O": [1.0] * 3,
+                "H": [1.0] * 3,
+                "L": [1.0] * 3,
+                "C": [1.0] * 3,
+                "V": [1.0] * 3,
+                "_ema_overlay": [1.0, 2.0, 3.0],
+                "target": [0.0, 1.0, 0.0],
+                "label": [0.0, 1.0, 0.0],
+                "target_long": [0.0, 1.0, 0.0],
+                "label_short": [0.0, 1.0, 0.0],
+                "adv_auc_100": [0.5] * 3,
+                "feat_a": [1.0, 2.0, 3.0],
+                "mom_rsi_14": [1.0, 2.0, 3.0],
+            }
+        )
+        assert _select_feature_columns(df, ["adv_"]) == ["feat_a", "mom_rsi_14"]
+
+    def test_overlay_exclusion_cannot_be_overridden(self):
+        df = pd.DataFrame({"_level": [1.0, 2.0], "feat": [1.0, 2.0]})
+        assert _select_feature_columns(df, []) == ["feat"]
+
+    def test_price_level_overlay_does_not_drive_auc(self, indicator):
+        """A trending price-level overlay separates old from new perfectly; it must
+        be ignored so the AUC of stationary features stays near 0.5."""
+        rng = np.random.default_rng(3)
+        n = 400
+        df = pd.DataFrame(
+            {
+                "O": 100.0,
+                "H": 101.0,
+                "L": 99.0,
+                "C": 100.0,
+                "V": 1000.0,
+                "_trend_overlay": np.linspace(100, 200, n),
+                "f0": rng.normal(size=n),
+                "f1": rng.normal(size=n),
+                "f2": rng.normal(size=n),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
+        out = indicator.compute(df, windows=[100], step=20)
+        assert out["adv_auc_100"].dropna().mean() < 0.62

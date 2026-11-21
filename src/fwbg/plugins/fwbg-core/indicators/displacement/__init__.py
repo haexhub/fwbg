@@ -8,6 +8,7 @@ Measures breakout quality and candle conviction:
 - Consecutive directional candles (momentum persistence)
 - Range expansion (unusual move detection)
 """
+
 from typing import Dict, List, Union
 
 import numpy as np
@@ -20,6 +21,7 @@ def _compute_displacement_features(
     df: pd.DataFrame,
     atr_period: int,
     range_avg_period: int,
+    impulse_threshold: float = 1.5,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all displacement features."""
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
@@ -58,24 +60,32 @@ def _compute_displacement_features(
     for i in range(2, n):
         if h[i - 2] < low[i] or low[i - 2] > h[i]:
             fvg_formed[i] = 1.0
+    # A 3-candle pattern cannot be evaluated on the first two bars
+    fvg_formed[: min(2, n)] = np.nan
     features["disp_fvg_formed"] = fvg_formed
 
     # Consecutive same-direction candles (signed)
     direction = np.sign(c - o)
     consecutive = np.zeros(n, dtype=float)
-    for i in range(1, n):
+    for i in range(n):
         if direction[i] == 0:
             consecutive[i] = 0.0
-        elif direction[i] == direction[i - 1]:
+        elif i > 0 and direction[i] == direction[i - 1]:
             consecutive[i] = consecutive[i - 1] + direction[i]
         else:
             consecutive[i] = direction[i]
     features["disp_consecutive_dir"] = consecutive
 
+    # Impulse: a candle whose body is at least `impulse_threshold` ATRs.
+    # +1 bullish impulse, -1 bearish impulse, 0 otherwise.
+    features["disp_impulse"] = np.where(
+        body / safe_atr >= impulse_threshold, direction, 0.0
+    )
+
     # Range expansion: current range / rolling average range
-    avg_range = pd.Series(candle_range).rolling(
-        range_avg_period, min_periods=1
-    ).mean().values
+    avg_range = (
+        pd.Series(candle_range).rolling(range_avg_period, min_periods=1).mean().values
+    )
     safe_avg_range = np.where(avg_range > EPSILON, avg_range, 1.0)
     features["disp_range_expansion"] = candle_range / safe_avg_range
 
@@ -90,7 +100,7 @@ class DisplacementIndicator(BaseIndicator):
     """Displacement/breakout quality features for ML trading."""
 
     name = "displacement"
-    version = "1.0.0"
+    version = "1.1.0"
     benefits_from_stationary = False
     group = "price_action"
 
@@ -101,6 +111,7 @@ class DisplacementIndicator(BaseIndicator):
         "disp_lower_wick_ratio",
         "disp_fvg_formed",
         "disp_consecutive_dir",
+        "disp_impulse",
         "disp_range_expansion",
         "disp_close_position",
     ]
@@ -110,9 +121,12 @@ class DisplacementIndicator(BaseIndicator):
         df: pd.DataFrame,
         atr_period: int = 14,
         range_avg_period: int = 20,
+        impulse_threshold: float = 1.5,
         **params,
     ) -> pd.DataFrame:
-        features = _compute_displacement_features(df, atr_period, range_avg_period)
+        features = _compute_displacement_features(
+            df, atr_period, range_avg_period, impulse_threshold
+        )
 
         if not features:
             return df
@@ -123,12 +137,9 @@ class DisplacementIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return ["disp_fvg_formed"]
-
     @classmethod
     def get_default_params(cls) -> dict:
-        return {"atr_period": 14, "range_avg_period": 20}
+        return {"atr_period": 14, "range_avg_period": 20, "impulse_threshold": 1.5}
 
     @classmethod
     def get_param_schema(cls) -> dict:
@@ -148,6 +159,14 @@ class DisplacementIndicator(BaseIndicator):
                 "min": 5,
                 "max": 100,
                 "step": 5,
+            },
+            "impulse_threshold": {
+                "type": "float",
+                "default": 1.5,
+                "description": "Minimum candle body in ATR multiples for disp_impulse to flag a displacement candle (+1 bullish, -1 bearish). Higher values keep only stronger impulses.",
+                "min": 0.5,
+                "max": 5.0,
+                "step": 0.25,
             },
         }
 

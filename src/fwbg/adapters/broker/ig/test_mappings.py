@@ -130,11 +130,16 @@ class TestTimeframeToResolution:
             assert tf in TIMEFRAME_TO_RESOLUTION, f"{tf} fehlt in TIMEFRAME_TO_RESOLUTION"
 
     def test_resolution_format(self):
-        """Resolutions sollten korrektes IG API Format haben."""
-        assert TIMEFRAME_TO_RESOLUTION[Timeframe.M1] == "MINUTE"
-        assert TIMEFRAME_TO_RESOLUTION[Timeframe.M5] == "MINUTE_5"
-        assert TIMEFRAME_TO_RESOLUTION[Timeframe.H1] == "HOUR"
-        assert TIMEFRAME_TO_RESOLUTION[Timeframe.D1] == "DAY"
+        """trading_ig (dataframe mode) muss jede Resolution auf den IG-API-Namen abbilden."""
+        import pytest
+        conv_resol = pytest.importorskip("trading_ig.utils").conv_resol
+        expected = {
+            Timeframe.M1: "MINUTE", Timeframe.M5: "MINUTE_5", Timeframe.M15: "MINUTE_15",
+            Timeframe.M30: "MINUTE_30", Timeframe.H1: "HOUR", Timeframe.H2: "HOUR_2",
+            Timeframe.H4: "HOUR_4", Timeframe.D1: "DAY", Timeframe.W1: "WEEK",
+        }
+        for tf, ig_name in expected.items():
+            assert conv_resol(TIMEFRAME_TO_RESOLUTION[tf]) == ig_name
 
 
 class TestTimeframeToYfinanceInterval:

@@ -4,6 +4,7 @@ SMA (Simple Moving Average) Indicator.
 Gleiche Architektur wie EMA: per-line Source-Config, Distanz-Features,
 Cross-Source Crossings.
 """
+
 import pandas as pd
 import ta
 
@@ -29,7 +30,7 @@ class SMAIndicator(BaseMovingAverageIndicator):
     """
 
     name = "sma"
-    version = "1.0.0"
+    version = "1.1.0"
     DEFAULT_LINES = DEFAULT_LINES
     _human_label = "SMA"
 
@@ -52,7 +53,11 @@ class SMAIndicator(BaseMovingAverageIndicator):
                 "description": "List of SMA lines to compute. Each entry has 'period' (int, >= 2) and 'source' (one of 'O', 'H', 'L', 'C'). Source defaults to 'C' if omitted.",
                 "item_schema": {
                     "period": {"type": "int", "min": 2, "max": 1000},
-                    "source": {"type": "str", "enum": ["O", "H", "L", "C"], "default": "C"},
+                    "source": {
+                        "type": "str",
+                        "enum": ["O", "H", "L", "C"],
+                        "default": "C",
+                    },
                 },
             },
             "crossings": {

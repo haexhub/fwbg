@@ -2,7 +2,8 @@
 
 Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur Verfügung stehen.
 
-**Gesamt: ~400+ Features** aus 28 Indicator Plugins (abhängig von Konfiguration und verfügbaren Makro-Daten)
+**Gesamt: ~400+ Features** aus 28 Indicator Plugins (abhängig von Konfiguration und verfügbaren Makro-Daten).
+Plugins mit dem Namespace `fwbg-premium:` stammen aus dem optionalen, separat installierten `fwbg-premium`-Package und sind nur mit diesem verfügbar.
 
 ---
 
@@ -22,7 +23,7 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 ### Zeit & Saisonalität
 8. [Zeit Features](#7-zeit-features-time_) — Intraday-Sessions
 9. [Saisonalität Features](#8-saisonalität-features-season_) — Kalender-Effekte
-10. [Calendar Event Features](#25-calendar-event-features-cal_) — Turn-of-Month, OpEx, FOMC
+10. [Calendar Event Features](#25-calendar-event-features-cal_) — Turn-of-Month, OpEx, NFP
 
 ### Dynamik & Meta-Features
 11. [Dynamik Features](#9-dynamik-features-dyn_) — Indikator-Änderungen
@@ -382,6 +383,8 @@ Zeit-Features kodieren Intraday-Muster und Trading-Sessions. Finanzmärkte zeige
 
 **Trading-Relevanz:** Session-Timing bestimmt Spread, Liquidität und Volatilität. Breakout-Strategien funktionieren besser am Session-Open, Mean-Reversion besser in ruhigen Phasen. Wochentags-Effekte (Montag-Reversals, Freitag-Profit-Taking) sind empirisch gut dokumentiert.
 
+Die Features sind nicht um einen Bar verschoben: jede Zeile beschreibt den eigenen Zeitstempel des Bars (Kalender und Session-Uhr stehen im Voraus fest), nur die erste Zeile ist NaN. Sessions gelten in UTC; `[start, end, "Area/City"]` wertet die Stunden in der lokalen Zeit der Zeitzone aus (Sommerzeit inklusive). Monats-/Quartalsende zählen Handelstage des Parameters `calendar` (Default `weekdays`).
+
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
 | `time_hour` | Stunde (0-23) | Session-Timing |
@@ -405,7 +408,7 @@ Saisonale Features erfassen kalendrische Muster über Tage, Wochen, Monate und Q
 | `season_month_sin/cos` | Zyklischer Monat | Für ML-Modelle |
 | `season_quarter` | Quartal (1-4) | Quartals-Effekte |
 | `season_quarter_sin/cos` | Zyklisches Quartal | Für ML-Modelle |
-| `season_week` | Kalenderwoche (1-52) | Wochen-Effekte |
+| `season_week` | Kalenderwoche (ISO, 1-53) | Wochen-Effekte |
 | `season_week_sin/cos` | Zyklische Woche | Für ML-Modelle |
 | `season_dayofmonth` | Tag im Monat (1-31) | Monatsanfang/-ende |
 | `season_dayofmonth_sin/cos` | Zyklischer Tag | Für ML-Modelle |
@@ -1135,17 +1138,17 @@ Event wenn S_pos > h·σ oder S_neg < -h·σ (dann Reset)
 
 ## 25. Calendar Event Features (`cal_`)
 
-Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basieren. Alle Features werden deterministisch aus dem DatetimeIndex berechnet — keine Preisdaten nötig.
+Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basieren. Alle Features werden deterministisch aus dem DatetimeIndex berechnet — keine Preisdaten nötig. Der Kalender steht im Voraus fest: jede Spalte beschreibt das eigene Datum des Bars und ist **nicht** um einen Bar verschoben (nur die erste Zeile ist NaN).
 
 ### Binäre Event-Features
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
-| `cal_turn_of_month` | Erste 3 / letzte 2 Tage des Monats | Turn-of-Month Effekt (~65% der monatlichen Returns) |
+| `cal_turn_of_month` | Erste 3 / letzte 2 Handelstage des Monats (Börsenkalender `calendar`, Default NYSE) | Turn-of-Month Effekt (~65% der monatlichen Returns) |
 | `cal_quarter_end` | Letzte 5 Tage von Mar/Jun/Sep/Dec | Portfolio-Rebalancing, Window Dressing |
 | `cal_triple_witching` | ±2 Tage um 3. Freitag von Mar/Jun/Sep/Dec | Triple Witching (Futures + Options Verfall) |
 | `cal_monthly_opex` | ±2 Tage um 3. Freitag jeden Monats | Monatlicher Options-Verfall |
-| `cal_nfp_week` | Erste 5 Tage jeden Monats | Non-Farm Payrolls Woche |
+| `cal_nfp_week` | Mo-Fr der Woche mit dem ersten Freitag des Monats (Näherung, keine Release-Ausnahmen) | Non-Farm Payrolls Woche |
 | `cal_year_boundary` | Letzte 5 Tage Dec / Erste 5 Tage Jan | January Effect, Year-End Rebalancing |
 
 ### Proximity-Features
@@ -1153,14 +1156,14 @@ Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basie
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
 | `cal_days_to_month_end` | Tage bis Monatsende (normalisiert 0..1) | Nähe zum Monatsende |
-| `cal_fomc_proximity` | Zyklische Sinus-Approximation (~46-Tage FOMC Zyklus) | Nähe zum nächsten FOMC Meeting |
 | `cal_week_of_month` | Woche im Monat (normalisiert 0..1) | Position innerhalb des Monats |
 
 **Parameter:**
 - `include_binary` (default: true) — Binäre Event-Features einschließen
 - `include_proximity` (default: true) — Kontinuierliche Proximity-Features einschließen
+- `calendar` (default: `NYSE`) — Börsenkalender für die Handelstage von `cal_turn_of_month` (`weekdays` = jeder Wochentag)
 
-**Plugin:** `fwbg-core:calendar_events` | **Prefix:** `cal_` | **9 Features**
+**Plugin:** `fwbg-core:calendar_events` | **Prefix:** `cal_` | **8 Features**
 
 ---
 
@@ -1243,7 +1246,6 @@ Latent Feature Extraction via PCA (Principal Component Analysis) — komprimiert
 |---------|--------------|----------------|
 | `ae_latent_0..N` | PCA-Komponenten | Hauptvariationsmodi über alle Indikatoren |
 | `ae_reconstruction_error` | L2 Rekonstruktionsfehler pro Zeile | Hoch = ungewöhnlicher Marktzustand (Anomalie-Detektion) |
-| `ae_explained_variance` | Kumulative erklärte Varianz | Wie viel Information die Latent-Features erfassen |
 
 **Besonderheit:** `ae_reconstruction_error` ist ein kraftvolles Anomalie-Signal — wenn der aktuelle Marktzustand schlecht durch die Hauptkomponenten erklärt wird, ist er "ungewöhnlich" relativ zur jüngsten Geschichte.
 
@@ -1267,15 +1269,13 @@ Erkennt topologische Strukturen in der Preisdynamik mittels Persistent Homology.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
-| `tda_h0_count_{w}` | Anzahl H0 Features (Connected Components) | Fragmentierung der Preisstruktur |
 | `tda_h1_count_{w}` | Anzahl H1 Features (Loops/Zyklen) | Zyklische Muster, Mean-Reversion |
 | `tda_h0_max_pers_{w}` | Max Persistence in H0 | Stärke der dominanten Struktur |
 | `tda_h1_max_pers_{w}` | Max Persistence in H1 | Stärke des dominanten Zyklus |
 | `tda_h0_mean_pers_{w}` | Mittlere Persistence H0 | Durchschnittliche Strukturstärke |
 | `tda_h1_mean_pers_{w}` | Mittlere Persistence H1 | Durchschnittliche Zyklusstärke |
 | `tda_persistence_entropy_{w}` | Shannon-Entropie des Persistence Diagrams | Komplexität der Topologie |
-| `tda_wasserstein_amp_{w}` | L2-Norm des Persistence Diagrams | Gesamtamplitude topologischer Features |
-| `tda_h1_ratio_{w}` | H1 / H0 Count (safe_divide) | Relative Zyklizität |
+| `tda_persistence_l2_norm_{w}` | L2-Norm der endlichen Persistences (H0+H1) | Gesamtamplitude topologischer Features |
 | `tda_max_loop_persistence_{w}` | Max H1 / Max H0 Persistence | Relative Loop-Stärke |
 
 **Intuition:** Trending-Märkte haben wenige H1-Features (Loops), Mean-Reverting-Märkte viele. Die Persistence Entropy ist niedrig bei einfacher Topologie (Trend) und hoch bei komplexer Struktur (Chop).
@@ -1286,7 +1286,7 @@ Erkennt topologische Strukturen in der Preisdynamik mittels Persistent Homology.
 - `time_delay` (default: 1) — Zeitverzögerung im Embedding
 - `maxdim` (default: 1) — Maximale Homologie-Dimension (0=H0, 1=H0+H1)
 
-**Plugin:** `fwbg-core:topological_features` | **Prefix:** `tda_` | **20 Features (10 pro Window × 2 Windows)**
+**Plugin:** `fwbg-core:topological_features` | **Prefix:** `tda_` | **16 Features (8 pro Window × 2 Windows)**
 
 ---
 
@@ -1326,7 +1326,7 @@ Erkennt Distribution Shift zwischen älteren und neueren Marktdaten innerhalb ei
 
 Opening Range Breakout (ORB) Features erfassen die Intraday-Eröffnungsdynamik — sowohl als Rolling-ORB (stündliche Berechnung) als auch als Session-spezifische ORB für konfigurierbare Handelsstunden (Asia Open, London Open, NY Open). Zusätzlich werden Rolling-Statistiken (Breakout-Rate, Continuation-Rate) berechnet, die zeigen ob ORB-Breakouts aktuell *funktionieren*.
 
-**Trading-Relevanz:** Die Opening Range ist eines der ältesten und robustesten Intraday-Konzepte. Die erste Bar einer Session etabliert Support/Resistance — ein Breakout darüber signalisiert Richtung für den Rest der Session. Session-spezifische ORBs sind besonders wertvoll: der NY Open (14:00 UTC) bringt institutionelles Volumen, London Open (08:00 UTC) definiert die europäische Richtung. Die Range-Breite relativ zum ATR unterscheidet Tight Ranges (Breakout-Setup) von Wide Ranges (Mean-Reversion-Setup).
+**Trading-Relevanz:** Die Opening Range ist eines der ältesten und robustesten Intraday-Konzepte. Die erste Bar einer Session etabliert Support/Resistance — ein Breakout darüber signalisiert Richtung für den Rest der Session. Session-spezifische ORBs sind besonders wertvoll: der NY Open (09:30 New York = 14:30 UTC im Winter, 13:30 UTC im Sommer) bringt institutionelles Volumen, der London Open (08:00 London = 08:00 UTC im Winter, 07:00 UTC im Sommer) definiert die europäische Richtung. Die Session-Uhrzeiten verschieben sich mit der Sommerzeit; mit `session_timezone` (z.B. `America/New_York`, `session_minute=30`) wird der Open pro Tag in lokaler Zeit berechnet. Die Range-Breite relativ zum ATR unterscheidet Tight Ranges (Breakout-Setup) von Wide Ranges (Mean-Reversion-Setup).
 
 ### Rolling ORB
 
@@ -1475,7 +1475,7 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `opening_range` | orb | ~23 | Opening Range Breakout, Session-ORB |
 | `fair_value_gap` | fvg | 8 | Bull/Bear FVG, Distance, Size |
 | `cusum_events` | cusum | 6 | CUSUM Structural Breaks (AFML Ch. 2) |
-| `calendar_events` | calendar | 9 | Turn-of-Month, OpEx, FOMC, NFP |
+| `calendar_events` | calendar | 8 | Turn-of-Month, OpEx, NFP |
 | `fractal_dimension` | fractal | 12 | Higuchi FD, Komplexität, Regime |
 | `wavelets` | wavelets | 27 | DWT Energie, Frequenz-Ratios |
 | `autoencoder_features` | autoencoder | 10 | PCA Latent Features, Reconstruction Error |
@@ -1483,6 +1483,8 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `adversarial_validation` | meta | 10 | Distribution Shift, Drift Score |
 
 #### Premium Plugins (`fwbg-premium`)
+
+> Optionale, separat installierte Plugin-Package; nicht Teil von fwbg. Diese Plugins stehen nur zur Verfügung, wenn das Package in derselben Umgebung installiert ist.
 
 | Plugin Name | Gruppe | Features | Beschreibung |
 |-------------|--------|----------|--------------|

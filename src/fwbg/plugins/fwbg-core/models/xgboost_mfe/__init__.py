@@ -9,6 +9,7 @@ letting the model learn which SL works best per setup. Each SL variant
 gets its own MFE targets computed from OHLC data. At inference,
 the SL variant with the best predicted MFE/SL ratio is selected.
 """
+
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, Optional
@@ -61,7 +62,9 @@ class XGBoostMFEModel(BaseStackedXGBoostModel):
             from fwbg.optimization.targets import compute_mfe_targets
 
             mfe_long, mfe_short = compute_mfe_targets(
-                train_df, sl_atr=variant, max_bars=50,
+                train_df,
+                sl_atr=variant,
+                max_bars=50,
             )
             return mfe_long if direction == "long" else mfe_short
         return fallback_targets.copy()
@@ -110,13 +113,16 @@ class XGBoostMFEModel(BaseStackedXGBoostModel):
         features: pd.DataFrame,
         atr: Optional[np.ndarray] = None,
     ) -> Optional[np.ndarray]:
-        """Return per-trade TP/SL based on predicted MFE and selected SL."""
+        """Return per-trade TP/SL based on predicted MFE and selected SL.
+
+        Rows whose ATR is NaN (warm-up) hold NaN distances: no trade there.
+        """
         if self._predicted_mfe is None or self._selected_sl_atr is None or atr is None:
             return None
 
         n = len(features)
         ptp = np.zeros((n, 2), dtype=np.float64)
-        ptp[:, 0] = self._predicted_mfe * atr   # TP = predicted_mfe * atr
+        ptp[:, 0] = self._predicted_mfe * atr  # TP = predicted_mfe * atr
         ptp[:, 1] = self._selected_sl_atr * atr  # SL = selected_sl_atr * atr
         return ptp
 

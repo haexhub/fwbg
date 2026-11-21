@@ -415,7 +415,7 @@ def card_data(card: ResearchCard) -> dict[str, Any]:
 
 | Endpoint | Behaviour |
 |---|---|
-| `GET /research?status=&tag=` | `card_summary` per readable card in id order; unreadable cards as `{"id", "error"}` entries; `running` from `live_runs(research_dir, card.id)`. |
+| `GET /research?status=&tag=&detail=` | `card_summary` per readable card in id order; unreadable cards as `{"id", "error"}` entries; `running` from `live_runs(research_dir, card.id)`. With `detail=true` each entry adds `card_detail`: `hypothesis`, `mechanism` and the latest `verdict` (`reason`, `reopen_if`; `null` while open). |
 | `GET /research/{card_id}` | `{"card": card_data, "trials": [json.loads(t.to_json()) …own], "pending": [run ids of the card's markers], "coverage": coverage lines as in `show`}`; 404 if no card. Reuse what `views._coverage_section` computes (factor out a helper returning the lines if needed; keep `show_text` output unchanged). |
 | `POST /research` | body `{title, tags: list[str], hypothesis, mechanism, cutoff?: date, criteria?: dict[str, float]}` → `new_card(...)` → 201 `{"card": card_data}`. Hypothesis and mechanism are required (min length 1) for API callers. |
 | `POST /research/{card_id}/status` | body `{status, reason, actor, reopen_if?}`; `status == "active"` → `reopen`; a verdict status → `write_verdict` (422 if `reopen_if` missing) → `{"card": card_data}`. `actor` required, non-empty. |

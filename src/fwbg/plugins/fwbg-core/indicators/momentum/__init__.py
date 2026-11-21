@@ -3,11 +3,14 @@ Momentum Indicator Plugin.
 
 Enthält: RSI, Stochastic, Williams %R, Ultimate Oscillator, ROC.
 """
+
 from typing import List
+
 import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features
+from fwbg.utils.indicator_math import wilder_rsi
 
 
 @register_indicator("momentum")
@@ -24,7 +27,7 @@ class MomentumIndicators(BaseIndicator):
     """
 
     name = "momentum"
-    version = "2.0.0"
+    version = "2.1.0"
 
     def compute(
         self,
@@ -33,7 +36,7 @@ class MomentumIndicators(BaseIndicator):
         stoch_periods: List[int] = None,
         williams_periods: List[int] = None,
         roc_periods: List[int] = None,
-        **params
+        **params,
     ) -> pd.DataFrame:
         """
         Berechnet alle Momentum-Indikatoren.
@@ -61,7 +64,7 @@ class MomentumIndicators(BaseIndicator):
 
         # RSI
         for period in rsi_periods:
-            features[f"mom_rsi_{period}"] = ta.momentum.rsi(df["C"], window=period)
+            features[f"mom_rsi_{period}"] = wilder_rsi(df["C"], period)
 
         # Stochastic
         for period in stoch_periods:
@@ -78,9 +81,7 @@ class MomentumIndicators(BaseIndicator):
             )
 
         # Ultimate Oscillator
-        features["mom_uo"] = ta.momentum.ultimate_oscillator(
-            df["H"], df["L"], df["C"]
-        )
+        features["mom_uo"] = ta.momentum.ultimate_oscillator(df["H"], df["L"], df["C"])
 
         # Rate of Change
         for period in roc_periods:
@@ -91,21 +92,20 @@ class MomentumIndicators(BaseIndicator):
 
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        """Gibt Liste aller Momentum-Feature-Spalten zurück."""
-        return [
-            # RSI
-            "mom_rsi_7", "mom_rsi_14", "mom_rsi_21",
-            # Stochastic
-            "mom_stoch_k_14", "mom_stoch_d_14",
-            "mom_stoch_k_21", "mom_stoch_d_21",
-            # Williams
-            "mom_williams_14", "mom_williams_21",
-            # Ultimate Oscillator
-            "mom_uo",
-            # ROC
-            "mom_roc_5", "mom_roc_10", "mom_roc_20",
-        ]
+    def get_feature_columns(self, params=None) -> List[str]:
+        """Feature columns compute() produces for ``params`` (defaults when None)."""
+        params = params or {}
+        rsi = params.get("rsi_periods") or [7, 14, 21]
+        stoch = params.get("stoch_periods") or [14, 21]
+        williams = params.get("williams_periods") or [14, 21]
+        roc = params.get("roc_periods") or [5, 10, 20]
+        cols = [f"mom_rsi_{p}" for p in rsi]
+        for p in stoch:
+            cols += [f"mom_stoch_k_{p}", f"mom_stoch_d_{p}"]
+        cols += [f"mom_williams_{p}" for p in williams]
+        cols.append("mom_uo")
+        cols += [f"mom_roc_{p}" for p in roc]
+        return cols
 
     @classmethod
     def get_default_params(cls) -> dict:

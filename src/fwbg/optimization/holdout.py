@@ -27,12 +27,19 @@ from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.data import config as data_config
 from fwbg.data.assets import get_asset
+from fwbg.data.validation import DataCheckError
 from fwbg.research.dsr import return_statistics
 from fwbg.simulation.trade import calculate_calmar_from_returns, calculate_sharpe_ratio
 from fwbg.utils.logging import log
 from fwbg.utils.progress import report_done, report_phase
 
-from .causal_reporting import equity_replay, monte_carlo_summary, sized_returns, slim_trades
+from .annualization import bars_per_year
+from .causal_reporting import (
+    equity_replay,
+    monte_carlo_summary,
+    sized_returns,
+    slim_trades,
+)
 from .indicator_grid import expand_indicator_grid
 from .process import load_symbol_frame, process_symbol
 from .process_fold import precompute_indicators
@@ -47,7 +54,15 @@ from .unified_simulation import run_unified_simulation
 # Statuses the holdout phase itself assigns (a development that is not "ok"
 # passes its own status through).
 HOLDOUT_STATUSES = frozenset(
-    {"ok", "not_significant", "no_unified_trades", "insufficient_data", "no_data", "error"}
+    {
+        "ok",
+        "not_significant",
+        "no_unified_trades",
+        "insufficient_data",
+        "no_data",
+        "data_invalid",
+        "error",
+    }
 )
 _DEVELOPMENT_KEYS = (
     "status",
@@ -96,6 +111,9 @@ def _holdout_look(csv_path: str, strategy: StrategyConfig) -> dict:
     report_phase(sym, "Holdout evaluation...")
     try:
         result = _evaluate(csv_path, strategy, development)
+    except DataCheckError as exc:  # the data after the cutoff failed its checks
+        result = _not_evaluated(development, cutoff, str(exc), status="data_invalid")
+        result["data_checks"] = exc.report.to_dict()
     except Exception as exc:  # before any holdout trade exists: not evaluated
         result = _failed(development, {"cutoff": cutoff, "evaluated": False}, exc)
     report_done(sym, result["status"])
@@ -129,12 +147,59 @@ def development_summary(development: dict) -> dict:
 
 
 def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dict:
-    sym = development["symbol"]
+    run = _run_frozen(csv_path, strategy, development)
+    if isinstance(run, dict):
+        return run
+    fold, evaluation, embargo = run
+    holdout = _look(fold, evaluation, strategy.holdout_cutoff, embargo)
+    try:
+        return _holdout_result(
+            development, evaluation, fold, holdout, strategy.run_seed
+        )
+    except Exception as exc:  # the holdout trades exist: the data was looked at
+        return _failed(development, holdout, exc)
+
+
+def frozen_trades_after_cutoff(
+    csv_path: str, strategy: StrategyConfig, development: dict
+) -> tuple[dict, list[dict]] | dict:
+    """Evaluate *development*'s frozen setting once on [cutoff, end), unsized.
+
+    For a portfolio holdout: the sleeve's own development status does not gate the
+    look (the portfolio is the hypothesis), only a frozen setting must exist.
+    Returns ``(look, trades)`` with the slim trades after the cutoff, or a
+    not-evaluated result.
+    """
+    if not development.get("unified_candidate"):
+        return _not_evaluated(
+            development,
+            strategy.holdout_cutoff,
+            f"no frozen setting (development ended in {development.get('status')})",
+        )
+    run = _run_frozen(csv_path, strategy, development)
+    if isinstance(run, dict):
+        return run
+    fold, evaluation, embargo = run
+    look = _look(fold, evaluation, strategy.holdout_cutoff, embargo)
+    detailed = evaluation.get("trades_detailed") or []
+    if len(detailed) != len(evaluation["trades"]):
+        raise ValueError("holdout trades without details; cannot date them")
+    return look, slim_trades(detailed)
+
+
+def _run_frozen(
+    csv_path: str, strategy: StrategyConfig, development: dict
+) -> tuple[WalkForwardFold, dict, int] | dict:
+    """Simulate the frozen setting on [cutoff, end): ``(fold, evaluation, embargo)`` or a
+    not-evaluated result."""
     cutoff = strategy.holdout_cutoff
-    df = load_symbol_frame(csv_path, strategy, sym)
+    df = load_symbol_frame(csv_path, strategy, development["symbol"])
+    sym = development["symbol"]
     n_dev = 0 if df is None else int(df.index.searchsorted(pd.Timestamp(cutoff)))
     if df is None or n_dev == len(df):
-        return _not_evaluated(development, cutoff, "no data after the cutoff", status="no_data")
+        return _not_evaluated(
+            development, cutoff, "no data after the cutoff", status="no_data"
+        )
 
     variant = _variant(strategy, development.get("indicator_variant"))
     ctx = SimulationContext.create(get_asset(sym), variant)
@@ -162,13 +227,12 @@ def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dic
     )
     if not evaluations:
         return _not_evaluated(
-            development, cutoff, "holdout window too short to evaluate", status="insufficient_data"
+            development,
+            cutoff,
+            "holdout window too short to evaluate",
+            status="insufficient_data",
         )
-    holdout = _look(fold, evaluations[0], cutoff, ctx.embargo_bars)
-    try:
-        return _holdout_result(development, evaluations[0], fold, holdout)
-    except Exception as exc:  # the holdout trades exist: the data was looked at
-        return _failed(development, holdout, exc)
+    return fold, evaluations[0], ctx.embargo_bars
 
 
 def _variant(strategy: StrategyConfig, label: str | None) -> StrategyConfig:
@@ -182,7 +246,9 @@ def _variant(strategy: StrategyConfig, label: str | None) -> StrategyConfig:
     raise ValueError(f"indicator variant {label!r} not in the grid")
 
 
-def _look(fold: WalkForwardFold, evaluation: dict, cutoff: str | None, embargo: int) -> dict:
+def _look(
+    fold: WalkForwardFold, evaluation: dict, cutoff: str | None, embargo: int
+) -> dict:
     """What the holdout look touched: its windows, trades and the features it could not use."""
     return {
         "cutoff": cutoff,
@@ -200,16 +266,26 @@ def _look(fold: WalkForwardFold, evaluation: dict, cutoff: str | None, embargo: 
 
 
 def _holdout_result(
-    development: dict, evaluation: dict, fold: WalkForwardFold, holdout: dict
+    development: dict,
+    evaluation: dict,
+    fold: WalkForwardFold,
+    holdout: dict,
+    seed: int,
 ) -> dict:
     sym = development["symbol"]
     config = development["config"]
     trades = evaluation["trades"]
     detailed = evaluation.get("trades_detailed") or []
     returns, pnl, taken = sized_returns(
-        trades, config["risk_per_trade"], config["circuit_breaker"], development["tr_trace"]
+        trades,
+        config["risk_per_trade"],
+        config["circuit_breaker"],
+        development["tr_trace"],
     )
-    years = len(fold.test_df) / (data_config.tf_cfg["bars_per_hour"] * 24 * 250)
+    years = len(fold.test_df) / bars_per_year(
+        fold.train_df.index.append(fold.test_df.index),
+        fallback=data_config.tf_cfg["bars_per_hour"] * 24 * 250,
+    )
     holdout["sized_trades"] = len(pnl)
     if not trades:
         log(1, "HOLDOUT - no trades after the cutoff", sym)
@@ -220,12 +296,16 @@ def _holdout_result(
             "development": development_summary(development),
         }
 
-    mc = monte_carlo_summary(pnl, returns)
+    mc = monte_carlo_summary(pnl, returns, seed=seed)
     sharpe = calculate_sharpe_ratio(
         returns, trades_per_year=len(pnl) / years if years > 0 else len(pnl)
     )
     aligned = len(detailed) == len(trades) and all(t.get("exit_time") for t in detailed)
-    equity = equity_replay([detailed[i]["exit_time"] for i in taken], returns) if aligned else None
+    equity = (
+        equity_replay([detailed[i]["exit_time"] for i in taken], returns)
+        if aligned
+        else None
+    )
     status = "ok" if mc["is_significant"] else "not_significant"
     win_rate = sum(1 for t in trades if t["result"] == 1.0) / len(trades)
     log(
@@ -241,15 +321,22 @@ def _holdout_result(
         "win_rate": win_rate,
         "rrr": development["rrr"],
         "sharpe": sharpe,
-        "calmar": calculate_calmar_from_returns(returns),
+        "calmar": calculate_calmar_from_returns(returns, years=years),
         "tr_trace": [t["pnl_raw"] for t in trades],
         "test_period_years": years,
         "config": config,
         "currencies": development["currencies"],
         "monte_carlo": mc,
         "return_stats": return_statistics(returns),
-        "reporting": {"causal": True, "n_trades": len(pnl), "pnl_trace": pnl, "equity": equity},
-        "trades_detailed": slim_trades(detailed) if len(detailed) == len(trades) else [],
+        "reporting": {
+            "causal": True,
+            "n_trades": len(pnl),
+            "pnl_trace": pnl,
+            "equity": equity,
+        },
+        "trades_detailed": slim_trades(detailed)
+        if len(detailed) == len(trades)
+        else [],
         "holdout": holdout,
         "development": development_summary(development),
     }
@@ -278,4 +365,6 @@ def _not_evaluated(
     }
     if status is None and "error" in development:
         result["error"] = development["error"]
+    if status is None and "data_checks" in development:
+        result["data_checks"] = development["data_checks"]
     return result

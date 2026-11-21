@@ -16,6 +16,10 @@ updates:
       prefix: "chore(deps)"
     labels:
       - "dependencies"
+    ignore:
+      # Skip 5.0.0 until the adapter supports Dukascopy 5.x; allow later 5.x releases.
+      - dependency-name: "dukascopy-python"
+        versions: ["5.0.0"]
     groups:
       ml:
         patterns:
@@ -35,19 +39,6 @@ updates:
   # separately (see deploy.yml's `pip install -e packages/...`).
   - package-ecosystem: "pip"
     directory: "/packages/fwbg-sdk"
-    target-branch: "develop"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Berlin"
-    commit-message:
-      prefix: "chore(deps)"
-    labels:
-      - "dependencies"
-
-  - package-ecosystem: "pip"
-    directory: "/packages/fwbg-premium"
     target-branch: "develop"
     schedule:
       interval: "weekly"

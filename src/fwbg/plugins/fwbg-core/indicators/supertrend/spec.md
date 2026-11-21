@@ -1,6 +1,6 @@
 # Plugin Spec — supertrend
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -8,7 +8,7 @@ Computes ATR-based Supertrend trend direction (+1/-1), flip events, and the Supe
 
 ## Summary
 
-Standard Supertrend indicator built on the ATR of high/low/close. Maintains sticky upper/lower bands and flips direction when close crosses the active band; emits the current direction (+1 up, -1 down), a flip flag (1 on direction change), and the Supertrend price line as an overlay. Features are shifted by one bar via shift_features to prevent lookahead. A sibling class SupertrendMTFIndicator in the same package (registered as "supertrend_mtf") applies the same core to a rolling OHLC aggregation over d1_bars base bars and additionally exposes distance-to-line in ATR units; this spec documents the primary "supertrend" registration only.
+Standard Supertrend indicator built on the ATR of high/low/close. Maintains sticky upper/lower bands and flips direction when close crosses the active band; emits the current direction (+1 up, -1 down), a flip flag (1 on direction change), and the Supertrend price line as an overlay. Features are shifted by one bar via shift_features to prevent lookahead. A sibling class SupertrendMTFIndicator in the same package (registered as "supertrend_mtf", version 1.2.0) applies the same core to completed higher-timeframe candles (d1_bars base bars per candle, buckets from Index.floor(d1_bars * bar duration), calendar-aligned up to one day; the open candle is never used) and additionally exposes distance-to-line in ATR units of those candles; this spec documents the primary "supertrend" registration only.
 
 ## Inputs
 
@@ -22,7 +22,7 @@ Standard Supertrend indicator built on the ATR of high/low/close. Maintains stic
 ## Outputs
 
 - st_direction (signal, +1/-1)
-- st_flip (signal, 1.0 on direction change else 0.0)
+- st_flip (signal, 1.0 on direction change else 0.0, NaN until two valid bars exist)
 - _st_line (overlay, Supertrend price level)
 
 ## Acceptance Criteria
@@ -33,16 +33,15 @@ Standard Supertrend indicator built on the ATR of high/low/close. Maintains stic
 - AC-004: Direction flips from +1 to -1 when close falls below the active lower band, and from -1 to +1 when close rises above the active upper band.
 - AC-005: The final upper band is non-increasing while price stays above the previous lower band, and the final lower band is non-decreasing while price stays below the previous upper band (sticky-band behavior).
 - AC-006: All emitted feature columns are shifted by one bar via shift_features so bar i's features depend only on data up to and including bar i-1.
-- AC-007: get_feature_columns() returns ['st_direction', 'st_flip']; get_signal_columns() returns the same; get_overlay_columns() returns ['_st_line'].
+- AC-007: get_feature_columns() returns ['st_direction', 'st_flip']; get_signal_columns() returns an empty list (both columns are shifted); get_overlay_columns() returns ['_st_line'].
 - AC-008: get_default_params() returns {'period': 14, 'multiplier': 3.0} and get_param_schema() declares matching bounds (period 2..500 step 1, multiplier 0.5..20.0 step 0.5).
 
 ## Edge Cases
 
-- First bar (i=0): direction initialized to +1 and supertrend_line initialized to 0.0 before the loop starts at i=1.
-- Warmup window of `period` bars: ATR from ta.volatility.average_true_range is NaN, which propagates into upper/lower bands and thus into st_line during warmup.
+- Warmup: ATR is valid from row `period - 1`. Direction, line and flip are NaN before that row (never 0.0 or a flip event); the band recursion starts on that row with direction +1.
 - After shift_features, the first row of every emitted feature is NaN regardless of input length.
 - Constant price series: ATR collapses to 0, upper and lower bands coincide with hl2, and direction remains at its initialized value (+1) with no flips.
-- Very short input (len(close) < 2): the direction/line loop body does not execute; outputs remain at their initialization values.
+- Input shorter than `period` rows: direction, line and flip are all NaN.
 
 ## Assumptions
 

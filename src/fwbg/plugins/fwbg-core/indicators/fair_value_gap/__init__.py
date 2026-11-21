@@ -8,6 +8,7 @@ Detects 3-candle imbalance zones (Smart Money Concepts):
 Price tends to return to fill these gaps. Features track active (unfilled)
 FVGs and the current price's relationship to them.
 """
+
 from typing import List
 
 import numpy as np
@@ -27,22 +28,26 @@ def _detect_fvgs(highs: np.ndarray, lows: np.ndarray):
     for i in range(2, len(highs)):
         # Bullish FVG: candle 1's high < candle 3's low
         if highs[i - 2] < lows[i]:
-            fvgs.append({
-                "type": "bullish",
-                "bottom": float(highs[i - 2]),
-                "top": float(lows[i]),
-                "bar": i,
-                "confirmed": False,
-            })
+            fvgs.append(
+                {
+                    "type": "bullish",
+                    "bottom": float(highs[i - 2]),
+                    "top": float(lows[i]),
+                    "bar": i,
+                    "confirmed": False,
+                }
+            )
         # Bearish FVG: candle 1's low > candle 3's high
         if lows[i - 2] > highs[i]:
-            fvgs.append({
-                "type": "bearish",
-                "bottom": float(highs[i]),
-                "top": float(lows[i - 2]),
-                "bar": i,
-                "confirmed": False,
-            })
+            fvgs.append(
+                {
+                    "type": "bearish",
+                    "bottom": float(highs[i]),
+                    "top": float(lows[i - 2]),
+                    "bar": i,
+                    "confirmed": False,
+                }
+            )
     return fvgs
 
 
@@ -51,7 +56,7 @@ class FairValueGapIndicator(BaseIndicator):
     """Fair Value Gap features for ML trading."""
 
     name = "fair_value_gap"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
         "fvg_bull_active",
@@ -135,28 +140,36 @@ class FairValueGapIndicator(BaseIndicator):
                 surviving.append(fvg)
             active_fvgs = surviving
 
-            # Check for engulfing confirmation at active FVGs
-            # Bullish engulfing: green candle whose body engulfs the previous candle's body
-            # while price is in the bull FVG zone (confirms gap as support).
-            # Bearish engulfing: same for bear FVGs.
+            # Check for engulfing confirmation at active FVGs.
+            # Canonical engulfing: the current candle's real body fully covers
+            # the previous candle's real body and has the opposite colour.
+            # A gap can only be confirmed by a retest, i.e. by a bar after the
+            # one that created it (on the creation bar the candle trivially
+            # "reaches into" the gap it just opened).
             if i > 0:
+                prev_red = close[i - 1] < opens[i - 1]
+                prev_green = close[i - 1] > opens[i - 1]
                 is_bull_engulf = (
-                    close[i] > opens[i]           # green candle
-                    and close[i] > opens[i - 1]   # close above prev open
-                    and opens[i] < close[i - 1]   # open below prev close
+                    prev_red
+                    and close[i] > opens[i]  # green candle
+                    and opens[i] <= close[i - 1]  # body starts at/below prev body low
+                    and close[i] >= opens[i - 1]  # body ends at/above prev body high
                 )
                 is_bear_engulf = (
-                    close[i] < opens[i]           # red candle
-                    and close[i] < opens[i - 1]   # close below prev open
-                    and opens[i] > close[i - 1]   # open above prev close
+                    prev_green
+                    and close[i] < opens[i]  # red candle
+                    and opens[i] >= close[i - 1]  # body starts at/above prev body high
+                    and close[i] <= opens[i - 1]  # body ends at/below prev body low
                 )
                 for fvg in active_fvgs:
+                    if fvg["bar"] >= i:
+                        continue
                     if not fvg["confirmed"]:
                         if fvg["type"] == "bullish" and is_bull_engulf:
-                            if lows[i] <= fvg["top"]:   # candle reaches into the gap
+                            if lows[i] <= fvg["top"]:  # candle reaches into the gap
                                 fvg["confirmed"] = True
                         elif fvg["type"] == "bearish" and is_bear_engulf:
-                            if highs[i] >= fvg["bottom"]:   # candle reaches into the gap
+                            if highs[i] >= fvg["bottom"]:  # candle reaches into the gap
                                 fvg["confirmed"] = True
 
             # Compute features from active FVGs
@@ -222,10 +235,6 @@ class FairValueGapIndicator(BaseIndicator):
 
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
-
-    def get_signal_columns(self) -> List[str]:
-        return ["fvg_bull_active", "fvg_bear_active", "fvg_in_gap",
-                "fvg_bull_confirmed", "fvg_bear_confirmed"]
 
     @classmethod
     def get_default_params(cls) -> dict:

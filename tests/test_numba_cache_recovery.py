@@ -10,6 +10,7 @@ Fixes:
   auto-clear-and-retry on ModuleNotFoundError.
 - run_grid_search() re-raises ImportError/ModuleNotFoundError instead of logging only.
 """
+
 import pathlib
 import types
 import numpy as np
@@ -27,6 +28,7 @@ if _atr is None:
 # ---------------------------------------------------------------------------
 # 1. _call_numba: stale cache recovery
 # ---------------------------------------------------------------------------
+
 
 class TestCallNumba:
     """_call_numba must clear cache and retry when Numba raises ModuleNotFoundError."""
@@ -94,12 +96,14 @@ class TestCallNumba:
 # 2. _clear_numba_cache: file deletion
 # ---------------------------------------------------------------------------
 
+
 class TestClearNumbaCache:
     """_clear_numba_cache deletes .nbi/.nbc files, leaves other files untouched."""
 
     def test_deletes_nbi_and_nbc_files(self, monkeypatch):
         """_clear_numba_cache removes .nbi and .nbc files from the cache dir."""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
             monkeypatch.setattr(_atr, "_CACHE_DIR", tmp_path)
@@ -117,6 +121,7 @@ class TestClearNumbaCache:
     def test_tolerates_missing_cache_dir(self):
         """_clear_numba_cache does not raise if cache dir does not exist."""
         import tempfile, pathlib
+
         nonexistent = pathlib.Path(tempfile.mkdtemp()) / "no_such_dir"
         # Temporarily replace _CACHE_DIR
         orig = _atr._CACHE_DIR
@@ -131,6 +136,7 @@ class TestClearNumbaCache:
 # 3. atr_based compute_targets: smoke test (catches Numba build issues)
 # ---------------------------------------------------------------------------
 
+
 class TestAtrComputeTargetsEndToEnd:
     """compute_targets must work end-to-end without raising.
 
@@ -143,12 +149,14 @@ class TestAtrComputeTargetsEndToEnd:
         n = 500
         np.random.seed(1)
         closes = 1.1 + np.cumsum(np.random.normal(0, 0.001, n))
-        df = pd.DataFrame({
-            "O": closes + np.random.uniform(-0.0005, 0.0005, n),
-            "H": closes + np.abs(np.random.normal(0, 0.001, n)),
-            "L": closes - np.abs(np.random.normal(0, 0.001, n)),
-            "C": closes,
-        })
+        df = pd.DataFrame(
+            {
+                "O": closes + np.random.uniform(-0.0005, 0.0005, n),
+                "H": closes + np.abs(np.random.normal(0, 0.001, n)),
+                "L": closes - np.abs(np.random.normal(0, 0.001, n)),
+                "C": closes,
+            }
+        )
         df["H"] = np.maximum(df["H"], df[["O", "C"]].max(axis=1))
         df["L"] = np.minimum(df["L"], df[["O", "C"]].min(axis=1))
         return df
@@ -156,18 +164,25 @@ class TestAtrComputeTargetsEndToEnd:
     @pytest.fixture
     def ctx(self):
         from fwbg.core.context import SimulationContext
+
         return SimulationContext(
-            symbol="TEST", asset_class="FOREX",
-            spread=0.0001, point=0.00001,
-            long_enabled=True, short_enabled=True,
-            min_trades=10, exit_strategy="atr_based",
+            symbol="TEST",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            long_enabled=True,
+            short_enabled=True,
+            min_trades=10,
+            exit_strategy="atr_based",
             exit_params={"atr_period": 14, "min_tp_pips": 5, "min_sl_pips": 5},
         )
 
     def test_returns_two_arrays(self, df, ctx):
         from fwbg.optimization.targets import compute_targets_cached
-        result = compute_targets_cached(df, 2.0, 1.0, ctx, timeout_bars=None,
-                                        exit_strategy_mode="atr_based")
+
+        result = compute_targets_cached(
+            df, 2.0, 1.0, ctx, timeout_bars=None, exit_strategy_mode="atr_based"
+        )
         assert len(result) == 2
         tl, ts = result
         assert len(tl) == len(df)
@@ -175,15 +190,26 @@ class TestAtrComputeTargetsEndToEnd:
 
     def test_returns_four_values_with_durations(self, df, ctx):
         from fwbg.optimization.targets import compute_targets_cached
-        result = compute_targets_cached(df, 2.0, 1.0, ctx, timeout_bars=None,
-                                        exit_strategy_mode="atr_based",
-                                        return_durations=True)
-        assert len(result) == 4, "Should return (targets_long, targets_short, dur_long, dur_short)"
+
+        result = compute_targets_cached(
+            df,
+            2.0,
+            1.0,
+            ctx,
+            timeout_bars=None,
+            exit_strategy_mode="atr_based",
+            return_durations=True,
+        )
+        assert len(result) == 4, (
+            "Should return (targets_long, targets_short, dur_long, dur_short)"
+        )
 
     def test_targets_are_binary(self, df, ctx):
         from fwbg.optimization.targets import compute_targets_cached
-        tl, ts = compute_targets_cached(df, 2.0, 1.0, ctx,
-                                         exit_strategy_mode="atr_based")
+
+        tl, ts = compute_targets_cached(
+            df, 2.0, 1.0, ctx, exit_strategy_mode="atr_based"
+        )
         unique_l = set(np.unique(tl[~np.isnan(tl)]))
         unique_s = set(np.unique(ts[~np.isnan(ts)]))
         assert unique_l <= {0.0, 1.0}, f"Unexpected long target values: {unique_l}"
@@ -191,8 +217,10 @@ class TestAtrComputeTargetsEndToEnd:
 
     def test_has_some_wins(self, df, ctx):
         from fwbg.optimization.targets import compute_targets_cached
-        tl, ts = compute_targets_cached(df, 2.0, 1.0, ctx,
-                                         exit_strategy_mode="atr_based")
+
+        tl, ts = compute_targets_cached(
+            df, 2.0, 1.0, ctx, exit_strategy_mode="atr_based"
+        )
         assert tl.sum() > 0, "Long targets should have some wins"
         assert ts.sum() > 0, "Short targets should have some wins"
 
@@ -201,6 +229,7 @@ class TestAtrComputeTargetsEndToEnd:
 # 4. run_grid_search: ImportError must surface, not be swallowed silently
 # ---------------------------------------------------------------------------
 
+
 class TestGridSearchErrorPropagation:
     """ImportError/ModuleNotFoundError from target computation must not be swallowed."""
 
@@ -208,31 +237,46 @@ class TestGridSearchErrorPropagation:
         n = 300
         np.random.seed(0)
         closes = 1.1 + np.cumsum(np.random.normal(0, 0.001, n))
-        df = pd.DataFrame({
-            "O": closes, "H": closes + 0.001, "L": closes - 0.001, "C": closes,
-            "_regime": np.ones(n, dtype=np.int8) * 7,
-            "feat_a": np.random.randn(n),
-            "feat_b": np.random.randn(n),
-            "feat_c": np.random.randn(n),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="15min"))
+        df = pd.DataFrame(
+            {
+                "O": closes,
+                "H": closes + 0.001,
+                "L": closes - 0.001,
+                "C": closes,
+                "_regime": np.ones(n, dtype=np.int8) * 7,
+                "feat_a": np.random.randn(n),
+                "feat_b": np.random.randn(n),
+                "feat_c": np.random.randn(n),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="15min"),
+        )
         train = df.iloc[:200]
         val = df.iloc[200:]
         return [(train, val)], df
 
     def _make_ctx(self, **overrides):
         from fwbg.core.context import SimulationContext
+
         defaults = dict(
-            symbol="TEST", asset_class="FOREX",
-            spread=0.0001, point=0.00001,
-            long_enabled=True, short_enabled=True,
+            symbol="TEST",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            long_enabled=True,
+            short_enabled=True,
             min_trades=10,
             exit_strategy="atr_based",
             exit_params={"atr_period": 14, "min_tp_pips": 5, "min_sl_pips": 5},
             exit_strategies=[
                 ExitStrategyConfig(
                     name="atr_based",
-                    params={"tp_mult": 2.0, "sl_mult": 1.0, "atr_period": 14,
-                            "min_tp_pips": 5, "min_sl_pips": 5},
+                    params={
+                        "tp_mult": 2.0,
+                        "sl_mult": 1.0,
+                        "atr_period": 14,
+                        "min_tp_pips": 5,
+                        "min_sl_pips": 5,
+                    },
                     ct=[0.55],
                 ),
             ],
@@ -264,8 +308,8 @@ class TestGridSearchErrorPropagation:
                 inner_df=inner_df,
             )
 
-    def test_other_exceptions_are_logged_not_raised(self, monkeypatch, capsys):
-        """Non-ImportError exceptions are caught but printed to stderr."""
+    def test_other_exceptions_raise_grid_search_error(self, monkeypatch):
+        """Non-ImportError exceptions abort the grid search with the cause attached."""
         from fwbg.optimization import grid_search as gs
 
         inner_folds, inner_df = self._make_minimal_folds()
@@ -276,16 +320,13 @@ class TestGridSearchErrorPropagation:
 
         monkeypatch.setattr(gs, "_compute_cached_targets", _broken_compute)
 
-        # Should NOT raise — but should print error to stderr
-        candidates, grid_results = gs.run_grid_search(
-            full_pool=["feat_a", "feat_b", "feat_c"],
-            inner_folds=inner_folds,
-            ctx=ctx,
-            regime_config={},
-            sym="TEST",
-            inner_df=inner_df,
-        )
-
-        captured = capsys.readouterr()
-        assert "[ERROR]" in captured.err, "RuntimeError should be printed to stderr"
-        assert len(candidates) == 0
+        with pytest.raises(gs.GridSearchError) as excinfo:
+            gs.run_grid_search(
+                full_pool=["feat_a", "feat_b", "feat_c"],
+                inner_folds=inner_folds,
+                ctx=ctx,
+                regime_config={},
+                sym="TEST",
+                inner_df=inner_df,
+            )
+        assert isinstance(excinfo.value.__cause__, RuntimeError)

@@ -159,7 +159,7 @@ def _add_card_commands(commands: argparse._SubParsersAction[argparse.ArgumentPar
     verdict.add_argument("card_id", metavar="S-NNNN")
     verdict.add_argument("status", choices=[status.value for status in VERDICT_STATUSES])
     verdict.add_argument("--reopen-if", required=True, help="what would justify reopening")
-    reopened = commands.add_parser("reopen", help="make a parked or rejected card active")
+    reopened = commands.add_parser("reopen", help="make a parked, rejected or candidate card active")
     reopened.add_argument("card_id", metavar="S-NNNN")
     for sub, required in ((new, False), (amend, True)):
         sub.add_argument(

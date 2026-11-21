@@ -277,11 +277,23 @@ def test_reopen_appends_to_an_existing_history(gate_register):
     )
 
 
-@pytest.mark.parametrize("status", [Status.ACTIVE, Status.CANDIDATE])
-def test_reopen_refuses_active_and_candidate_cards(gate_register, status):
-    set_card(gate_register, status=status)
-    with pytest.raises(CommandError, match=status.value):
+def test_reopen_refuses_an_active_card(gate_register):
+    set_card(gate_register, status=Status.ACTIVE)
+    with pytest.raises(CommandError, match="active"):
         reopen(gate_register, "S-0007", "x", TODAY)
+
+
+def test_reopen_turns_a_candidate_card_active(gate_register):
+    set_card(gate_register, status=Status.CANDIDATE, body="## Verdict\n\nPromising.\n")
+    updated = reopen(gate_register, "S-0007", "new data", TODAY)
+    stored = card(gate_register)
+    assert stored == updated
+    assert stored.status is Status.ACTIVE
+    assert stored.body == (
+        "## History\n\n- 2026-10-20: reopened from candidate: new data\n\n"
+        "## Verdict\n\nPromising.\n"
+    )
+    assert git_status(gate_register) == ""
 
 
 # --- actor -------------------------------------------------------------------

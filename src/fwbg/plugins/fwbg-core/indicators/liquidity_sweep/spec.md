@@ -1,6 +1,6 @@
 # Plugin Spec — liquidity_sweep
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -37,7 +37,7 @@ Scans each bar for a wick that pierces the prior rolling swing low (bullish swee
 
 ## Acceptance Criteria
 
-- AC-001: Registers under the name 'liquidity_sweep' via @register_indicator and exposes version '1.0.0'.
+- AC-001: Registers under the name 'liquidity_sweep' via @register_indicator and exposes version '1.1.0'.
 - AC-002: compute() returns the input DataFrame concatenated with the 10 feature columns listed in _FEATURES.
 - AC-003: Detects a bullish sweep at bar i when lows[i] < swing_low[i-1] and closes[i] > swing_low[i-1]; the resulting zone has zone_bottom = lows[i] (wick) and zone_top = closes[i].
 - AC-004: Detects a bearish sweep at bar i when highs[i] > swing_high[i-1] and closes[i] < swing_high[i-1]; the resulting zone has zone_bottom = closes[i] and zone_top = highs[i] (wick).
@@ -46,8 +46,8 @@ Scans each bar for a wick that pierces the prior rolling swing low (bullish swee
 - AC-007: lsw_bull_active / lsw_bear_active are 1.0 iff there exists an active zone of that type whose midpoint lies on the far side of the current close (d > 0), else 0.0.
 - AC-008: lsw_bull_dist and lsw_bear_dist are the ATR-normalised distance from close to the nearest such zone midpoint; unset when no qualifying zone exists (remains NaN).
 - AC-009: lsw_bull_size / lsw_bear_size are (zone_top - zone_bottom) / current_atr for the same nearest zone selected for the distance feature.
-- AC-010: lsw_bull_in_zone / lsw_bear_in_zone are 1.0 when the current close lies within any active zone of that type, else 0.0.
-- AC-011: lsw_bull_recency / lsw_bear_recency equal 1 - min(i - last_bar, zone_lookback) / zone_lookback using the most recent active zone's bar, and are 0.0 when no such zone exists.
+- AC-010: lsw_bull_in_zone / lsw_bear_in_zone are 1.0 when the current close lies within any active zone of that type that was created on an earlier bar (the sweep bar itself closes on the zone edge, so it never counts), else 0.0.
+- AC-011: lsw_bull_recency / lsw_bear_recency equal 1 - min(i - last_sweep_bar, zone_lookback) / zone_lookback using the bar of the most recent sweep of that side, whether or not its zone is still active (invalidation does not reset recency), and are 0.0 only before the first sweep or once zone_lookback bars have passed since the last one.
 - AC-012: ATR normalisation substitutes 1.0 whenever atr[i] <= EPSILON to avoid division blow-ups.
 - AC-013: All feature columns are shifted by one bar via shift_features(...) before being returned, preventing lookahead.
 
@@ -57,11 +57,11 @@ Scans each bar for a wick that pierces the prior rolling swing low (bullish swee
 - ATR is near zero (flat market): current_atr falls back to 1.0 so distances and sizes remain finite instead of exploding.
 - No qualifying zone on the far side of close: nearest_*_dist stays at np.inf, active flag remains 0.0, and dist/size stay NaN for that bar.
 - Simultaneous bullish and bearish sweep on the same bar: both zones are appended and both sides' features are populated independently.
-- Zone immediately invalidated by a subsequent wick through its extreme is dropped and no longer contributes to active/dist/size (but still influences recency until age >= zone_lookback).
+- Zone immediately invalidated by a subsequent wick through its extreme is dropped and no longer contributes to active/dist/size (but still drives recency until age >= zone_lookback).
 - Constant / very short input series where no wick ever exceeds the swing extreme: all outputs remain in their initial states (zeros and NaNs) prior to shifting.
 
 ## Assumptions
 
 - Input DataFrame contains columns 'H', 'L', 'C' as float-typed OHLC data indexed by time.
 - EPSILON, shift_features, BaseIndicator, and register_indicator behave per the fwbg_sdk contract (shift_features shifts features by one bar and aligns to df.index).
-- Recency semantics are 'most recent active zone', not 'most recent sweep ever' — once all zones of a side expire or invalidate, recency returns to 0.
+- Recency semantics are 'most recent sweep of that side within zone_lookback bars', independent of whether its zone has been invalidated.

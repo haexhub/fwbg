@@ -1,20 +1,33 @@
 """Walk-forward fold processing — extracted from process.py."""
+
+import dataclasses
 import time
 
 import numpy as np
 import pandas as pd
 
+from fwbg.data import config as data_config
 from fwbg.data.config import MIN_TRADES
+from fwbg_sdk.enums import Timeframe
 from fwbg.core.columns import named_columns
 from fwbg.core.config import RegimeFilterConfig
 from fwbg.pipeline import (
-    compute_indicator_pool, get_feature_columns, compute_regime_bitmask,
+    compute_indicator_pool,
+    get_feature_columns,
+    compute_regime_bitmask,
 )
-from fwbg.pipeline.features import split_indicators_by_stationarity
+from fwbg.pipeline.features import (
+    configured_signal_columns,
+    split_indicators_by_stationarity,
+)
 from fwbg.utils.progress import report_phase, report_meta, report_progress
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, refit_stateful_features, evaluate_on_holdout
 from .grid_search import run_grid_search, select_features
+
+
+class PreprocessingError(RuntimeError):
+    """A configured preprocessing step failed on a fold."""
 
 
 def _is_stateful_indicator(indicator) -> bool:
@@ -44,6 +57,42 @@ def _attach_regime_to_fold(
     return df
 
 
+# Settings a winning candidate selected besides TP/SL/CT and features. They
+# travel candidate -> best_config -> merged replay candidate; dropping one
+# evaluates a different strategy than the one the grid selected.
+CONTEXT_SETTING_KEYS = (
+    "exit_strategy",
+    "exit_params",
+    "exit_modifier",
+    "exit_modifier_params",
+    "entry_modifier",
+    "entry_modifier_params",
+    "model_hyperparameters",
+)
+SELECTED_SETTING_KEYS = CONTEXT_SETTING_KEYS + ("regime_filter",)
+
+
+def candidate_context(ctx, candidate: dict):
+    """*ctx* with the settings *candidate* selected; a missing/None value keeps ctx's."""
+    overrides = {
+        key: candidate[key]
+        for key in CONTEXT_SETTING_KEYS
+        if candidate.get(key) is not None
+    }
+    return dataclasses.replace(ctx, **overrides) if overrides else ctx
+
+
+def apply_candidate_regime(
+    train_df: pd.DataFrame, test_df: pd.DataFrame, candidate: dict
+) -> None:
+    """Attach the candidate's regime mask; the frames may still carry another combo's."""
+    if candidate.get("regime_filter") is None:
+        return
+    regime_params = RegimeFilterConfig.from_dict(candidate["regime_filter"])
+    _attach_regime_to_fold(train_df, regime_params)
+    _attach_regime_to_fold(test_df, regime_params)
+
+
 def precompute_indicators(df, strategy, sym):
     """Split indicators by stationarity and precompute raw ones.
 
@@ -67,9 +116,9 @@ def precompute_indicators(df, strategy, sym):
         for ind in stateful_indicators
     }
     raw_indicators = [
-        ind for ind in raw_indicators
-        if (ind.get("name", "") if isinstance(ind, dict) else ind)
-        not in stateful_names
+        ind
+        for ind in raw_indicators
+        if (ind.get("name", "") if isinstance(ind, dict) else ind) not in stateful_names
     ]
     stationary_names = {
         (ind.get("name", "") if isinstance(ind, dict) else ind)
@@ -77,9 +126,12 @@ def precompute_indicators(df, strategy, sym):
     }
     fold_indicators = [
         *stationary_indicators,
-        *[ind for ind in stateful_indicators
-          if (ind.get("name", "") if isinstance(ind, dict) else ind)
-          not in stationary_names],
+        *[
+            ind
+            for ind in stateful_indicators
+            if (ind.get("name", "") if isinstance(ind, dict) else ind)
+            not in stationary_names
+        ],
     ]
 
     precomputed_raw_df = None
@@ -91,32 +143,50 @@ def precompute_indicators(df, strategy, sym):
         )
         # Only keep NEW indicator features — exclude base columns
         # (OHLCV, internal, and any columns already in df like macro_*)
-        base_cols = set(df.columns) | {'O', 'H', 'L', 'C', 'V'}
-        raw_feature_cols = [c for c in precomputed_raw_df.columns
-                            if c not in base_cols
-                            and not c.startswith('_')]
+        base_cols = set(df.columns) | {"O", "H", "L", "C", "V"}
+        raw_feature_cols = [
+            c
+            for c in precomputed_raw_df.columns
+            if c not in base_cols and not c.startswith("_")
+        ]
         precomputed_raw_df = precomputed_raw_df[raw_feature_cols]
         # Downcast to float32 to halve memory (~5.7GB → ~2.8GB for 1700+ features)
-        float64_cols = precomputed_raw_df.select_dtypes(include=['float64']).columns
+        float64_cols = precomputed_raw_df.select_dtypes(include=["float64"]).columns
         if len(float64_cols) > 0:
-            precomputed_raw_df[float64_cols] = precomputed_raw_df[float64_cols].astype(np.float32)
-        log(1, f"Precomputed {len(raw_indicators)} raw indicators: "
-               f"{len(raw_feature_cols)} features ({time.time()-t0:.1f}s)", sym)
+            precomputed_raw_df[float64_cols] = precomputed_raw_df[float64_cols].astype(
+                np.float32
+            )
+        log(
+            1,
+            f"Precomputed {len(raw_indicators)} raw indicators: "
+            f"{len(raw_feature_cols)} features ({time.time() - t0:.1f}s)",
+            sym,
+        )
 
     if not has_preprocessing:
         fold_indicators = [
             ind for ind in fold_indicators if _is_stateful_indicator(ind)
         ]
     total_indicators = len(raw_indicators) + len(fold_indicators)
-    log(2, f"Per-fold indicators: {len(fold_indicators)}, Precomputed: {len(raw_indicators)}", sym)
+    log(
+        2,
+        f"Per-fold indicators: {len(fold_indicators)}, Precomputed: {len(raw_indicators)}",
+        sym,
+    )
     report_meta(sym, indicator_count=total_indicators)
 
     return fold_indicators, precomputed_raw_df, total_indicators
 
 
-def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
-                         preprocessing_configs, ctx, sym,
-                         indicator_progress_callback=None):
+def _prepare_fold_common(
+    fold,
+    fold_indicators,
+    precomputed_raw_df,
+    preprocessing_configs,
+    ctx,
+    sym,
+    indicator_progress_callback=None,
+):
     """Shared fold preparation: preprocessing, indicators, feature pool.
 
     Returns:
@@ -127,7 +197,7 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     pp_test_raw = fold.test_df
     orig_train_ohlc = None
     orig_test_ohlc = None
-    ohlc_cols = ['O', 'H', 'L', 'C']
+    ohlc_cols = ["O", "H", "L", "C"]
 
     if preprocessing_configs:
         from fwbg.core import get_preprocessor
@@ -151,25 +221,36 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
                 train_ctx = PipelineContext(
                     df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
-                train_ctx = pp.execute(train_ctx, **pp_params)
-                pp_train_raw = train_ctx.df
+                train_out = pp.execute(train_ctx, **pp_params).df
 
                 test_ctx = PipelineContext(
                     df=pp_test_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
-                test_ctx = pp.execute(test_ctx, **pp_params)
-                pp_test_raw = test_ctx.df
+                test_out = pp.execute(test_ctx, **pp_params).df
             except Exception as e:
+                # A configured step that cannot run changes the strategy: skipping it
+                # would silently train and test a different one. Surface the failure
+                # (the symbol is reported as an error with this message).
                 log(1, f"  Preprocessing {pp_name} failed: {e}", sym)
+                raise PreprocessingError(
+                    f"preprocessor {pp_name!r} failed on fold {fold.fold_id}: {e}"
+                ) from e
+            pp_train_raw = train_out
+            pp_test_raw = test_out
 
-        log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
-               f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
+        log(
+            2,
+            f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
+            f"Test {len(fold.test_df)}→{len(pp_test_raw)}",
+            sym,
+        )
 
     fold_stateful = [ind for ind in fold_indicators if _is_stateful_indicator(ind)]
     fold_stateless = [ind for ind in fold_indicators if not _is_stateful_indicator(ind)]
     if fold_stateless:
         train_df = compute_indicator_pool(
-            pp_train_raw, indicators=fold_stateless,
+            pp_train_raw,
+            indicators=fold_stateless,
             progress_callback=indicator_progress_callback,
         )
         test_df = compute_indicator_pool(
@@ -216,6 +297,25 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     # Feature pool cleaning: identify columns to drop (inf, >10% NaN)
     full_pool = get_feature_columns(train_df)
 
+    # Unshifted signal columns (row i = the decision at bar i's close) are entry /
+    # exit inputs, not model features: they would run one bar ahead of the 1-bar
+    # convention. They stay in the frames (rules, exits) and are cleaned like any
+    # column, but are not offered to an ML model. Signal models have no model
+    # features: their pool is the named signal columns.
+    unshifted = (
+        set()
+        if ctx.model_type == "signal"
+        else set(configured_signal_columns(ctx.indicator_plugins))
+    )
+    forced = unshifted.intersection(ctx.required_features or [])
+    if forced:
+        raise ValueError(
+            f"model.required_features names unshifted signal column(s) {sorted(forced)}: "
+            "they describe the decision at the bar's close, so a model using them "
+            "sees the bar it trades on. Name the shifted copy instead "
+            "('<column>_prev' with signal_columns_as_features: true on the indicator)."
+        )
+
     protected_cols = set(ctx.required_features or []) | set(
         named_columns(train_df.columns, ctx.exit_columns or [])
     )
@@ -246,12 +346,22 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
             drop_cols.append(col)
             excluded_nan += 1
 
+    full_pool = [c for c in full_pool if c not in unshifted]
+
     # Build time filter conditions from allowed_hours / allowed_days
     time_conditions = []
     if getattr(ctx, "allowed_hours", None):
         time_conditions.append({"type": "hour_filter", "hours": ctx.allowed_hours})
     if getattr(ctx, "allowed_days", None):
         time_conditions.append({"type": "day_filter", "days": ctx.allowed_days})
+    if getattr(ctx, "entry_hours", None) is not None:
+        time_conditions.append(
+            {
+                "type": "session_filter",
+                "hours": ctx.entry_hours,
+                "bar_minutes": Timeframe.from_str(data_config.TIMEFRAME).minutes,
+            }
+        )
 
     # Compose signal rules + time filters into _composed_signal_long/short columns
     signal_rules = getattr(ctx, "signal_rules", None)
@@ -261,6 +371,7 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
 
     if has_signal_rules or time_conditions:
         from fwbg.signals.evaluator import evaluate_rules, evaluate_condition
+
         for direction in ("long", "short"):
             rules = (signal_rules or {}).get(direction)
             col_name = f"_composed_signal_{direction}"
@@ -288,27 +399,56 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     }
 
 
-def _finalize_fold_data(train_df, test_df, full_pool,
-                        orig_train_ohlc, orig_test_ohlc, fold, sym):
+def _drop_warmup(df: pd.DataFrame) -> pd.DataFrame:
+    """Cut the leading rows until every column that has values has started.
+
+    Interior NaN rows stay: dropping them would leave gaps in the bar arrays
+    the trade simulation walks, so TP/SL hits inside a gap went unseen. The
+    XGBoost models and the feature selectors handle NaN features; a column
+    without any value stays NaN (a missing feature) instead of emptying the frame.
+    """
+    starts = [
+        start
+        for start in (df[c].first_valid_index() for c in df.columns)
+        if start is not None
+    ]
+    return df.loc[max(starts) :] if starts else df
+
+
+def _finalize_fold_data(
+    train_df, test_df, full_pool, orig_train_ohlc, orig_test_ohlc, fold, sym
+):
     """Restore original OHLC after preprocessing and validate data sizes.
 
     Returns:
         (train_df, test_df, full_pool) or None if insufficient data.
     """
-    ohlc_cols = ['O', 'H', 'L', 'C']
+    ohlc_cols = ["O", "H", "L", "C"]
     if orig_train_ohlc:
         for col in ohlc_cols:
             train_df[col] = orig_train_ohlc[col].reindex(train_df.index)
             test_df[col] = orig_test_ohlc[col].reindex(test_df.index)
 
-    log(2, f"  Fold {fold.fold_id + 1}: Train={train_df.shape} Test={test_df.shape}", sym)
+    log(
+        2,
+        f"  Fold {fold.fold_id + 1}: Train={train_df.shape} Test={test_df.shape}",
+        sym,
+    )
 
     if len(train_df) < MIN_TRADES * 2:
-        log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Train-Daten ({len(train_df)})", sym)
+        log(
+            1,
+            f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Train-Daten ({len(train_df)})",
+            sym,
+        )
         return None
 
     if len(test_df) < MIN_TRADES:
-        log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})", sym)
+        log(
+            1,
+            f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})",
+            sym,
+        )
         return None
 
     if len(full_pool) < 1:
@@ -318,16 +458,28 @@ def _finalize_fold_data(train_df, test_df, full_pool,
     return train_df, test_df, full_pool
 
 
-def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
-                      preprocessing_configs, ctx, sym,
-                      indicator_progress_callback=None):
+def prepare_fold_data(
+    fold,
+    fold_indicators,
+    precomputed_raw_df,
+    preprocessing_configs,
+    ctx,
+    sym,
+    indicator_progress_callback=None,
+):
     """Prepare train/test DataFrames for ML models.
 
-    Drops columns with >10% NaN or inf, then drops NaN rows.
+    Drops columns with >10% NaN or inf in train or without any value in test,
+    then the indicator warm-up rows; NaN inside the frame stays for the models.
     """
     common = _prepare_fold_common(
-        fold, fold_indicators, precomputed_raw_df,
-        preprocessing_configs, ctx, sym, indicator_progress_callback,
+        fold,
+        fold_indicators,
+        precomputed_raw_df,
+        preprocessing_configs,
+        ctx,
+        sym,
+        indicator_progress_callback,
     )
 
     train_df = common["train_df"]
@@ -339,22 +491,37 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
         train_df = train_df.drop(columns=drop_cols, errors="ignore")
         test_df = test_df.drop(columns=drop_cols, errors="ignore")
 
-    log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features "
-           f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)", sym)
+    log(
+        2,
+        f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features "
+        f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)",
+        sym,
+    )
 
-    train_df = train_df.dropna()
-    test_df = test_df.dropna()
+    train_df = _drop_warmup(train_df)
+    test_df = _drop_warmup(test_df)
 
     return _finalize_fold_data(
-        train_df, test_df, full_pool,
-        common["orig_train_ohlc"], common["orig_test_ohlc"], fold, sym,
+        train_df,
+        test_df,
+        full_pool,
+        common["orig_train_ohlc"],
+        common["orig_test_ohlc"],
+        fold,
+        sym,
     )
 
 
 def process_single_fold(
-    fold, fold_idx, n_folds,
-    fold_indicators, precomputed_raw_df, preprocessing_configs,
-    ctx, sym, total_indicators,
+    fold,
+    fold_idx,
+    n_folds,
+    fold_indicators,
+    precomputed_raw_df,
+    preprocessing_configs,
+    ctx,
+    sym,
+    total_indicators,
 ):
     """Process a single walk-forward fold.
 
@@ -371,41 +538,67 @@ def process_single_fold(
     # --- Signal models: separate data prep + fold processing ---
     if ctx.model_type == "signal":
         from .signal_fold import prepare_signal_fold_data, process_signal_fold
+
         fold_data = prepare_signal_fold_data(
-            fold, fold_indicators, precomputed_raw_df,
-            preprocessing_configs, ctx, sym,
+            fold,
+            fold_indicators,
+            precomputed_raw_df,
+            preprocessing_configs,
+            ctx,
+            sym,
             indicator_progress_callback=indicator_progress,
         )
         if fold_data is None:
             return None, []
         train_df, test_df, full_pool = fold_data
-        log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time()-t0:.1f}s)", sym)
+        log(
+            2,
+            f"  Fold {fold.fold_id + 1}: Data prepared ({time.time() - t0:.1f}s)",
+            sym,
+        )
         return process_signal_fold(
-            fold, train_df, test_df, full_pool, ctx, sym,
+            fold,
+            train_df,
+            test_df,
+            full_pool,
+            ctx,
+            sym,
         )
 
     # --- ML models: standard data prep + grid search ---
     fold_data = prepare_fold_data(
-        fold, fold_indicators, precomputed_raw_df,
-        preprocessing_configs, ctx, sym,
+        fold,
+        fold_indicators,
+        precomputed_raw_df,
+        preprocessing_configs,
+        ctx,
+        sym,
         indicator_progress_callback=indicator_progress,
     )
     if fold_data is None:
         return None, []
     train_df, test_df, full_pool = fold_data
 
-    log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time()-t0:.1f}s)", sym)
+    log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time() - t0:.1f}s)", sym)
 
     # Regime-Filter Kombinationen aus Grid (falls definiert)
-    regime_filter_combinations = ctx.regime_filter_grid.get_combinations() if ctx.regime_filter_grid else [{"conditions": []}]
+    regime_filter_combinations = (
+        ctx.regime_filter_grid.get_combinations()
+        if ctx.regime_filter_grid
+        else [{"conditions": []}]
+    )
     n_regime_combos = len(regime_filter_combinations)
     base_combos = ctx.total_grid_combinations()
     total_combos = base_combos * n_regime_combos
 
     # Update meta with actual feature count (first fold only)
     if fold_idx == 0:
-        report_meta(sym, indicator_count=total_indicators, feature_count=len(full_pool),
-                    regime_combos=n_regime_combos)
+        report_meta(
+            sym,
+            indicator_count=total_indicators,
+            feature_count=len(full_pool),
+            regime_combos=n_regime_combos,
+        )
 
     # === GRID SEARCH OVER REGIME COMBOS ===
     candidates = []
@@ -413,23 +606,39 @@ def process_single_fold(
 
     if fold.fold_id == 0:  # Only log once
         n_exit = len(ctx.exit_strategies) if ctx.exit_strategies else 0
-        n_model_hp = len(ctx.grid_model_hyperparameters) if ctx.grid_model_hyperparameters else 1
-        log(1, f"Grid-Search: {n_exit} exit strategies × {n_model_hp} model HP × {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
+        n_model_hp = (
+            len(ctx.grid_model_hyperparameters) if ctx.grid_model_hyperparameters else 1
+        )
+        log(
+            1,
+            f"Grid-Search: {n_exit} exit strategies × {n_model_hp} model HP × {n_regime_combos} Regime = {total_combos} Kombinationen",
+            sym,
+        )
 
     # === NESTED CV: Inner Folds erstellen (auf Train-Daten dieses Folds) ===
     report_phase(sym, f"Fold {fold.fold_id + 1}/{n_folds}: Grid-Search...")
-    cv_split = nested_cv_split(train_df, holdout_ratio=0.0, n_inner_folds=ctx.n_inner_folds, embargo_bars=ctx.embargo_bars)
+    cv_split = nested_cv_split(
+        train_df,
+        holdout_ratio=0.0,
+        n_inner_folds=ctx.n_inner_folds,
+        embargo_bars=ctx.embargo_bars,
+    )
     inner_folds = refit_stateful_features(cv_split["inner_folds"])
 
-    log(2, f"  Fold {fold.fold_id + 1}: Nested CV with {len(inner_folds)} inner folds", sym)
+    log(
+        2,
+        f"  Fold {fold.fold_id + 1}: Nested CV with {len(inner_folds)} inner folds",
+        sym,
+    )
 
     # === FEATURE SELECTION (einmal pro Fold, regime-unabhängig) ===
     fold_idx_1based = fold.fold_id + 1
     fs_names = [p["name"] for p in (ctx.feature_selection_plugins or [])] or ["none"]
-    report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: Feature Selection [{' > '.join(fs_names)}]...")
-    selected_long, selected_short = select_features(
-        inner_folds, full_pool, ctx, sym
+    report_phase(
+        sym,
+        f"Fold {fold_idx_1based}/{n_folds}: Feature Selection [{' > '.join(fs_names)}]...",
     )
+    selected_long, selected_short = select_features(inner_folds, full_pool, ctx, sym)
 
     if not selected_long and not selected_short and not ctx.required_features:
         log(2, f"  Fold {fold_idx_1based}: No features selected, skipping", sym)
@@ -460,22 +669,34 @@ def process_single_fold(
         regime_str = " + ".join(regime_desc) if regime_desc else "No Filter"
 
         if n_regime_combos > 1 and fold.fold_id == 0:  # Only log once
-            log(2, f"  Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
+            log(2, f"  Regime {rf_idx + 1}/{n_regime_combos}: {regime_str}", sym)
 
         # Grid-Search mit Progress-Reporting (Offset akkumuliert über Regime-Combos)
         current_offset = grid_progress_offset  # capture for closure
 
         def grid_progress_callback(grid_count, grid_total, _offset=current_offset):
-            report_progress(sym, fold_idx_1based, n_folds, "grid_search",
-                           _offset + grid_count, total_grid_combos)
+            report_progress(
+                sym,
+                fold_idx_1based,
+                n_folds,
+                "grid_search",
+                _offset + grid_count,
+                total_grid_combos,
+            )
 
         if n_regime_combos > 1:
-            report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: R{rf_idx+1}/{n_regime_combos} Grid-Search...")
+            report_phase(
+                sym,
+                f"Fold {fold_idx_1based}/{n_folds}: R{rf_idx + 1}/{n_regime_combos} Grid-Search...",
+            )
         else:
             report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: Grid-Search...")
         gs_candidates, gs_grid_results = run_grid_search(
-            full_pool, inner_folds,
-            ctx, regime_config, sym,
+            full_pool,
+            inner_folds,
+            ctx,
+            regime_config,
+            sym,
             inner_df=train_df,
             progress_callback=grid_progress_callback,
             preselected_features_long=selected_long,
@@ -488,7 +709,11 @@ def process_single_fold(
 
         grid_progress_offset += base_combos
 
-    log(2, f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates", sym)
+    log(
+        2,
+        f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates",
+        sym,
+    )
 
     if not candidates:
         log(2, f"  Fold {fold.fold_id + 1}: No profitable candidates, skipping", sym)
@@ -505,24 +730,18 @@ def process_single_fold(
         return None, all_grid_results
 
     # === TEST EVALUATION (on this fold's test set) ===
-    # Apply winning candidate's full context (exit strategy, entry modifier,
-    # model hyperparameters) so holdout evaluation matches grid search.
-    import dataclasses
-    holdout_ctx = dataclasses.replace(
-        ctx,
-        exit_strategy=b.get("exit_strategy", ctx.exit_strategy),
-        exit_params=b.get("exit_params", ctx.exit_params),
-        exit_modifier_params=b.get("exit_modifier_params", ctx.exit_modifier_params),
-        entry_modifier=b.get("entry_modifier", ctx.entry_modifier),
-        entry_modifier_params=b.get("entry_modifier_params", ctx.entry_modifier_params),
-        model_hyperparameters=b.get("model_hyperparameters", ctx.model_hyperparameters),
-    )
-    test_result = evaluate_on_holdout(test_df, train_df, b, holdout_ctx)
+    # Apply the winning candidate's settings so holdout evaluation matches grid search.
+    apply_candidate_regime(train_df, test_df, b)
+    test_result = evaluate_on_holdout(test_df, train_df, b, candidate_context(ctx, b))
 
     # A fold is kept whatever its test trade count: dropping it would let the
     # test set filter folds.
     if test_result["n_trades"] < ctx.min_trades:
-        log(1, f"  Fold {fold.fold_id + 1}: Low trade count ({test_result['n_trades']}/{ctx.min_trades})", sym)
+        log(
+            1,
+            f"  Fold {fold.fold_id + 1}: Low trade count ({test_result['n_trades']}/{ctx.min_trades})",
+            sym,
+        )
 
     # Store fold results
     fold_result = {
@@ -544,10 +763,7 @@ def process_single_fold(
             "ct": b["params"][2],
             "rrr": b["rrr"],
             "timeout_bars": b.get("timeout_bars"),
-            "model_hyperparameters": b.get("model_hyperparameters"),
-            "exit_modifier_params": b.get("exit_modifier_params"),
-            "exit_strategy": b.get("exit_strategy"),
-            "exit_params": b.get("exit_params"),
+            **{key: b.get(key) for key in SELECTED_SETTING_KEYS},
             "ct_votes": b.get("ct_votes"),
             "ct_diagnostics": b.get("ct_diagnostics"),
         },
@@ -558,7 +774,9 @@ def process_single_fold(
 
     # Calculate bias ratio
     inner_pnl = fold_result["inner_val_pnl"]
-    bias_text = f"{fold_result['test_pnl'] / inner_pnl:.2f}x" if inner_pnl > 0 else "n/a"
+    bias_text = (
+        f"{fold_result['test_pnl'] / inner_pnl:.2f}x" if inner_pnl > 0 else "n/a"
+    )
 
     # Log detailed fold results for diagnostics
     bc = fold_result["best_config"]
@@ -581,8 +799,12 @@ def process_single_fold(
             extra_parts.append(f"trail={trail} BE={be}")
     detail_str = " | ".join(extra_parts)
 
-    log(1, f"  Fold {fold.fold_id + 1}: WR={test_result['win_rate']:.1%} "
-           f"PnL={test_result['pnl']:.1f} Trades={test_result['n_trades']} "
-           f"Bias={bias_text} [{detail_str}]", sym)
+    log(
+        1,
+        f"  Fold {fold.fold_id + 1}: WR={test_result['win_rate']:.1%} "
+        f"PnL={test_result['pnl']:.1f} Trades={test_result['n_trades']} "
+        f"Bias={bias_text} [{detail_str}]",
+        sym,
+    )
 
     return fold_result, all_grid_results

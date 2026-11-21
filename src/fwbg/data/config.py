@@ -47,12 +47,31 @@ def resolve_tf_config(timeframe: "str | Timeframe") -> dict:
     return TIMEFRAME_CONFIG[Timeframe.from_str(timeframe).canonical]
 
 
-RESAMPLE_FROM = None  # Set by CLI when loading lower-TF files for resampling
+# Set by the CLI when loading lower-TF files for resampling. Read from the
+# environment like TIMEFRAME so re-imported (forkserver/spawn) workers see it.
+RESAMPLE_FROM = os.environ.get("RESAMPLE_FROM") or None
 
 tf_cfg = resolve_tf_config(TIMEFRAME)
 WINDOW_SIZE = tf_cfg["window_size"]
 OOS_SIZE = tf_cfg["oos_size"]
 WALK_FORWARD_FOLDS = 8  # Default, overridden by strategy.validation.folds
+
+
+def use_data_path(datasource: str | None, cli_data_path: str | None) -> None:
+    """Point DATA_PATH at the strategy's CSV datasource; ``--data-path`` overrides it."""
+    global DATA_PATH
+    if datasource:
+        from fwbg.core.data_sources import CSVSourceConfig, get_data_source
+
+        try:
+            source = get_data_source(datasource)
+        except ValueError:
+            print(f"Warnung: Datasource '{datasource}' nicht gefunden")
+        else:
+            if isinstance(source, CSVSourceConfig) and source.exists():
+                DATA_PATH = str(source.path)
+    if cli_data_path:
+        DATA_PATH = cli_data_path
 
 
 def convert_numpy(obj):

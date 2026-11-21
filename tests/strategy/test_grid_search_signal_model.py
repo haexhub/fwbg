@@ -83,6 +83,8 @@ def _ctx(**overrides) -> SimulationContext:
         exit_strategies=_make_exit_strategies(),
         required_features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
         early_pruning_enabled=False,
+        # Plumbing tests on synthetic data whose inner folds need not be profitable
+        min_fold_stability=0.0,
     )
     defaults.update(overrides)
     return SimulationContext(**defaults)

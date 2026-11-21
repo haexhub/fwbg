@@ -10,6 +10,14 @@ Implements a three-step entry signal for trending markets:
                        range, then breaks the last local Lower High (long) or
                        local Higher Low (short) — the momentum entry trigger.
 
+Impulse range for the pullback depth (``depth_reference``):
+  broken_level  (default) — from the broken swing high down to the swing low at
+                BOS time (long; mirrored for short). The close must fall below
+                the broken level, back into the old range, to reach the depth.
+  impulse_peak  — from the highest high since the BOS down to the same swing
+                low: the classic Fibonacci retracement of the impulse. A new
+                peak restarts the pullback (and its running low).
+
 The structural stop is placed below the pullback low (long) or above the
 pullback high (short), with an ATR buffer for noise tolerance.
 
@@ -24,6 +32,7 @@ Feature columns useful for ML context:
   tpm_trend_ok_long     — 1 when close > EMA
   tpm_trend_ok_short    — 1 when close < EMA
 """
+
 from typing import List
 
 import numpy as np
@@ -31,6 +40,7 @@ import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, EPSILON, register_indicator, shift_features
+from fwbg.utils.indicator_math import wilder_atr
 
 
 @register_indicator("pullback_momentum")
@@ -38,7 +48,9 @@ class PullbackMomentumIndicator(BaseIndicator):
     """Trend + Pullback + Momentum Break entry signals (Long and Short)."""
 
     name = "pullback_momentum"
-    version = "1.0.0"
+    version = "1.2.0"
+
+    DEPTH_REFERENCES = ("broken_level", "impulse_peak")
 
     _FEATURES = [
         "tpm_entry_long",
@@ -61,8 +73,15 @@ class PullbackMomentumIndicator(BaseIndicator):
         local_high_lookback: int = 3,
         sl_buffer_mult: float = 0.25,
         atr_period: int = 14,
+        depth_reference: str = "broken_level",
         **params,
     ) -> pd.DataFrame:
+        if depth_reference not in self.DEPTH_REFERENCES:
+            raise ValueError(
+                f"depth_reference must be one of {self.DEPTH_REFERENCES}, "
+                f"got {depth_reference!r}"
+            )
+        from_peak = depth_reference == "impulse_peak"
         n = len(df)
         highs = df["H"].values.astype(np.float64)
         lows = df["L"].values.astype(np.float64)
@@ -71,14 +90,15 @@ class PullbackMomentumIndicator(BaseIndicator):
         # EMA for trend filter
         ema = ta.trend.ema_indicator(pd.Series(closes), window=ema_period).values
 
-        # ATR for SL buffer (handles edge case of atr=0 bars)
-        atr = ta.volatility.average_true_range(
+        # ATR for the SL buffer: NaN until the first full window
+        atr = wilder_atr(
             pd.Series(highs), pd.Series(lows), pd.Series(closes), window=atr_period
-        ).values
-        atr = np.nan_to_num(atr, nan=0.0)
+        ).to_numpy(dtype=np.float64)
 
         # Rolling swing extremes — no lookahead (window covers only past bars)
-        swing_high = pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        swing_high = (
+            pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        )
         swing_low = pd.Series(lows).rolling(swing_lookback, min_periods=1).min().values
 
         # Output arrays
@@ -93,23 +113,26 @@ class PullbackMomentumIndicator(BaseIndicator):
         trend_ok_short = np.zeros(n)
 
         # ── Long state machine ────────────────────────────────────────────────
-        long_state = 0      # 0 = SCANNING, 1 = PULLBACK
-        imp_high_l = 0.0    # price of the broken swing high (impulse top)
-        imp_low_l = 0.0     # rolling swing low at BOS time (impulse base)
-        pb_low_l = np.inf   # running minimum low during pullback
+        long_state = 0  # 0 = SCANNING, 1 = PULLBACK
+        imp_high_l = 0.0  # price of the broken swing high (the broken level)
+        imp_low_l = 0.0  # rolling swing low at BOS time (impulse base)
+        peak_l = 0.0  # highest high since the BOS (impulse_peak only)
+        pb_low_l = np.inf  # running minimum low during pullback
 
         # ── Short state machine ───────────────────────────────────────────────
-        short_state = 0     # 0 = SCANNING, 1 = PULLBACK
-        imp_high_s = 0.0    # rolling swing high at BOS time (impulse top)
-        imp_low_s = 0.0     # price of the broken swing low (impulse base)
-        pb_high_s = -np.inf # running maximum high during pullback
+        short_state = 0  # 0 = SCANNING, 1 = PULLBACK
+        imp_high_s = 0.0  # rolling swing high at BOS time (impulse base)
+        imp_low_s = 0.0  # price of the broken swing low (the broken level)
+        trough_s = 0.0  # lowest low since the BOS (impulse_peak only)
+        pb_high_s = -np.inf  # running maximum high during pullback
 
         for i in range(1, n):
             c = closes[i]
             h = highs[i]
             lo = lows[i]
             ema_i = ema[i]
-            atr_i = atr[i] if atr[i] > EPSILON else 1e-5
+            atr_ok = bool(np.isfinite(atr[i]))
+            atr_i = atr[i] if atr_ok and atr[i] > EPSILON else 1e-5
 
             # Previous rolling extremes (strictly no lookahead)
             prev_sh = swing_high[i - 1]
@@ -125,6 +148,7 @@ class PullbackMomentumIndicator(BaseIndicator):
                     long_state = 1
                     imp_high_l = prev_sh
                     imp_low_l = prev_sl
+                    peak_l = h
                     pb_low_l = lo
 
             else:  # PULLBACK
@@ -136,16 +160,22 @@ class PullbackMomentumIndicator(BaseIndicator):
                     # New BOS while waiting for pullback → refresh impulse
                     imp_high_l = prev_sh
                     imp_low_l = prev_sl
+                    peak_l = max(peak_l, h)
                     pb_low_l = lo
 
                 else:
-                    if lo < pb_low_l:
+                    if from_peak and h > peak_l:
+                        # A new peak restarts the pullback
+                        peak_l = h
+                        pb_low_l = lo
+                    elif lo < pb_low_l:
                         pb_low_l = lo
 
-                    impulse_range = imp_high_l - imp_low_l
+                    top = peak_l if from_peak else imp_high_l
+                    impulse_range = top - imp_low_l
                     pb = 0.0
                     if impulse_range > EPSILON:
-                        pb = (imp_high_l - c) / impulse_range
+                        pb = (top - c) / impulse_range
 
                     in_pullback_long[i] = 1.0
 
@@ -153,7 +183,13 @@ class PullbackMomentumIndicator(BaseIndicator):
                     lh_start = max(0, i - local_high_lookback)
                     local_lh = np.max(highs[lh_start:i]) if lh_start < i else imp_high_l
 
-                    if pb >= min_pullback_pct and ema_valid and c > ema_i and c > local_lh:
+                    if (
+                        pb >= min_pullback_pct
+                        and ema_valid
+                        and atr_ok
+                        and c > ema_i
+                        and c > local_lh
+                    ):
                         entry_long[i] = 1.0
                         sl_d = (c - pb_low_l) + atr_i * sl_buffer_mult
                         sl_dist_long[i] = sl_d if sl_d > EPSILON else atr_i * 0.5
@@ -168,6 +204,7 @@ class PullbackMomentumIndicator(BaseIndicator):
                     short_state = 1
                     imp_high_s = prev_sh
                     imp_low_s = prev_sl
+                    trough_s = lo
                     pb_high_s = h
 
             else:  # PULLBACK
@@ -179,16 +216,22 @@ class PullbackMomentumIndicator(BaseIndicator):
                     # New BOS down while waiting for pullback → refresh impulse
                     imp_high_s = prev_sh
                     imp_low_s = prev_sl
+                    trough_s = min(trough_s, lo)
                     pb_high_s = h
 
                 else:
-                    if h > pb_high_s:
+                    if from_peak and lo < trough_s:
+                        # A new trough restarts the pullback
+                        trough_s = lo
+                        pb_high_s = h
+                    elif h > pb_high_s:
                         pb_high_s = h
 
-                    impulse_range = imp_high_s - imp_low_s
+                    bottom = trough_s if from_peak else imp_low_s
+                    impulse_range = imp_high_s - bottom
                     pb = 0.0
                     if impulse_range > EPSILON:
-                        pb = (c - imp_low_s) / impulse_range
+                        pb = (c - bottom) / impulse_range
 
                     in_pullback_short[i] = 1.0
 
@@ -196,7 +239,13 @@ class PullbackMomentumIndicator(BaseIndicator):
                     hl_start = max(0, i - local_high_lookback)
                     local_hl = np.min(lows[hl_start:i]) if hl_start < i else imp_low_s
 
-                    if pb >= min_pullback_pct and ema_valid and c < ema_i and c < local_hl:
+                    if (
+                        pb >= min_pullback_pct
+                        and ema_valid
+                        and atr_ok
+                        and c < ema_i
+                        and c < local_hl
+                    ):
                         entry_short[i] = 1.0
                         sl_d = (pb_high_s - c) + atr_i * sl_buffer_mult
                         sl_dist_short[i] = sl_d if sl_d > EPSILON else atr_i * 0.5
@@ -204,6 +253,23 @@ class PullbackMomentumIndicator(BaseIndicator):
                         in_pullback_short[i] = 0.0
                     else:
                         pullback_pct[i] = max(pullback_pct[i], min(pb, 2.0))
+
+        # Until the EMA exists no state is tracked, so a 0.0 flag there would be a
+        # fabricated "no setup / trend not ok": the warm-up stays NaN.
+        ema_valid_rows = np.flatnonzero(~np.isnan(ema))
+        warmup = max(int(ema_valid_rows[0]) if len(ema_valid_rows) else n, 1)
+        for arr in (
+            entry_long,
+            entry_short,
+            sl_dist_long,
+            sl_dist_short,
+            pullback_pct,
+            in_pullback_long,
+            in_pullback_short,
+            trend_ok_long,
+            trend_ok_short,
+        ):
+            arr[:warmup] = np.nan
 
         features = {
             "tpm_entry_long": entry_long,
@@ -220,11 +286,8 @@ class PullbackMomentumIndicator(BaseIndicator):
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        return self._FEATURES
-
-    def get_signal_columns(self) -> List[str]:
-        return ["tpm_entry_long", "tpm_entry_short"]
+    def get_feature_columns(self, params=None) -> List[str]:
+        return list(self._FEATURES)
 
     @classmethod
     def get_default_params(cls) -> dict:
@@ -235,6 +298,7 @@ class PullbackMomentumIndicator(BaseIndicator):
             "local_high_lookback": 3,
             "sl_buffer_mult": 0.25,
             "atr_period": 14,
+            "depth_reference": "broken_level",
         }
 
     @classmethod
@@ -302,6 +366,17 @@ class PullbackMomentumIndicator(BaseIndicator):
                 "min": 5,
                 "max": 50,
                 "step": 1,
+            },
+            "depth_reference": {
+                "type": "choice",
+                "choices": list(cls.DEPTH_REFERENCES),
+                "default": "broken_level",
+                "description": (
+                    "Top of the impulse range for the pullback depth (long; "
+                    "mirrored for short). broken_level: the broken swing high, so "
+                    "the close must fall back below it. impulse_peak: the highest "
+                    "high since the BOS (classic Fibonacci retracement)."
+                ),
             },
         }
 

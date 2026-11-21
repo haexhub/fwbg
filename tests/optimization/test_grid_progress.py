@@ -2,6 +2,7 @@
 
 Diese Tests verifizieren, dass progress_callback für jede Grid-Kombination aufgerufen wird.
 """
+
 import pytest
 from unittest.mock import MagicMock, patch, call
 import pandas as pd
@@ -29,6 +30,17 @@ def _make_grid_ctx(exit_strategies, **overrides):
     return SimulationContext(**defaults)
 
 
+@pytest.fixture(autouse=True)
+def _no_target_precompute():
+    """These tests feed MagicMock inner folds, which the target precompute cannot
+    iterate. That used to raise inside every combo and the grid search swallowed it,
+    so the mocked combo evaluation was never reached; the failure is no longer hidden."""
+    with patch(
+        "fwbg.optimization.grid_search._compute_cached_targets", return_value=None
+    ):
+        yield
+
+
 class TestGridProgressCallback:
     """Tests für run_grid_search progress_callback Aufrufe."""
 
@@ -40,21 +52,33 @@ class TestGridProgressCallback:
         progress_callback = MagicMock()
 
         # 4 exit_strategies = 4 Kombinationen
-        ctx = _make_grid_ctx([
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
-        ])
+        ctx = _make_grid_ctx(
+            [
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]
+                ),
+            ]
+        )
 
         # Dummy inner_df mit genug Daten
         np.random.seed(42)
-        inner_df = pd.DataFrame({
-            "adx_14": np.random.randn(1000),
-            "ema_21": np.random.randn(1000),
-            "trend_slope_21": np.random.randn(1000),
-            "momentum_rsi_14": np.random.randn(1000),
-        })
+        inner_df = pd.DataFrame(
+            {
+                "adx_14": np.random.randn(1000),
+                "ema_21": np.random.randn(1000),
+                "trend_slope_21": np.random.randn(1000),
+                "momentum_rsi_14": np.random.randn(1000),
+            }
+        )
 
         # Dummy inner_folds
         inner_folds = [
@@ -70,7 +94,9 @@ class TestGridProgressCallback:
             # Feature-Selection überspringen - Features direkt zurückgeben
             mock_select.return_value = (full_pool, full_pool)
 
-            with patch("fwbg.optimization.grid_search._process_single_grid_combo") as mock_combo:
+            with patch(
+                "fwbg.optimization.grid_search._process_single_grid_combo"
+            ) as mock_combo:
                 # Jede Combo liefert ein Ergebnis
                 mock_combo.return_value = (
                     {"params": (10, 20, 0.6), "inner_val_pnl": 100},  # candidate
@@ -98,8 +124,9 @@ class TestGridProgressCallback:
         calls = [call.args for call in progress_callback.call_args_list]
         for i, (pos, total) in enumerate(calls):
             assert total == 4, f"grid_total sollte 4 sein, ist aber {total}"
-            assert pos >= 1 and pos <= 4, f"grid_pos sollte zwischen 1-4 sein, ist aber {pos}"
-
+            assert pos >= 1 and pos <= 4, (
+                f"grid_pos sollte zwischen 1-4 sein, ist aber {pos}"
+            )
 
     def test_progress_callback_called_on_early_exit_no_features(self):
         """progress_callback sollte auch bei Early-Exit (keine Features) aufgerufen werden."""
@@ -117,16 +144,26 @@ class TestGridProgressCallback:
         ctx.required_features = []
 
         ctx.exit_strategies = [
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]
+            ),
         ]
 
         # Leerer inner_df - wird zu Early-Exit führen (keine Features)
-        inner_df = pd.DataFrame({
-            "some_col": [1, 2, 3],
-        })
+        inner_df = pd.DataFrame(
+            {
+                "some_col": [1, 2, 3],
+            }
+        )
 
         inner_folds = [MagicMock(train_idx=[0, 1], val_idx=[2])]
         full_pool = []  # Keine Features - Early-Exit
@@ -148,7 +185,6 @@ class TestGridProgressCallback:
             f"wurde aber {progress_callback.call_count}x aufgerufen"
         )
 
-
     def test_progress_callback_called_on_boruta_no_selection(self):
         """progress_callback sollte aufgerufen werden wenn Boruta keine Features selektiert."""
         from fwbg.optimization.grid_search import run_grid_search
@@ -164,21 +200,33 @@ class TestGridProgressCallback:
         ctx.required_features = []
 
         ctx.exit_strategies = [
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]
+            ),
         ]
 
         # inner_df mit genug Features
-        inner_df = pd.DataFrame({
-            "feat1": np.random.randn(100),
-            "feat2": np.random.randn(100),
-            "feat3": np.random.randn(100),
-            "feat4": np.random.randn(100),
-        })
+        inner_df = pd.DataFrame(
+            {
+                "feat1": np.random.randn(100),
+                "feat2": np.random.randn(100),
+                "feat3": np.random.randn(100),
+                "feat4": np.random.randn(100),
+            }
+        )
 
-        inner_folds = [MagicMock(train_idx=list(range(80)), val_idx=list(range(80, 100)))]
+        inner_folds = [
+            MagicMock(train_idx=list(range(80)), val_idx=list(range(80, 100)))
+        ]
         full_pool = ["feat1", "feat2", "feat3", "feat4"]
 
         with patch("fwbg.optimization.grid_search.select_features") as mock_select:
@@ -213,18 +261,30 @@ class TestProgressCallbackSequence:
         progress_callback = MagicMock()
 
         # 4 exit_strategies = 4 Kombinationen
-        ctx = _make_grid_ctx([
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
-        ])
+        ctx = _make_grid_ctx(
+            [
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]
+                ),
+            ]
+        )
 
         np.random.seed(42)
-        inner_df = pd.DataFrame({
-            "feat1": np.random.randn(1000),
-            "feat2": np.random.randn(1000),
-        })
+        inner_df = pd.DataFrame(
+            {
+                "feat1": np.random.randn(1000),
+                "feat2": np.random.randn(1000),
+            }
+        )
 
         inner_folds = [
             MagicMock(train_idx=list(range(500)), val_idx=list(range(500, 700))),
@@ -234,7 +294,9 @@ class TestProgressCallbackSequence:
         with patch("fwbg.optimization.grid_search.select_features") as mock_select:
             mock_select.return_value = (full_pool, full_pool)
 
-            with patch("fwbg.optimization.grid_search._process_single_grid_combo") as mock_combo:
+            with patch(
+                "fwbg.optimization.grid_search._process_single_grid_combo"
+            ) as mock_combo:
                 mock_combo.return_value = (
                     {"params": (10, 20, 0.6), "inner_val_pnl": 100},
                     {"tp": 10, "sl": 20, "pnl": 100},
@@ -270,18 +332,42 @@ class TestProgressCallbackSequence:
         # TP=10, SL=20 -> RRR=0.5 >= 0.5 -> OK
         # TP=20, SL=30 -> RRR=0.67 >= 0.5 -> OK
         # TP=20, SL=20 -> RRR=1.0 >= 0.5 -> OK
-        ctx = _make_grid_ctx([
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6], min_rrr=0.5),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6], min_rrr=0.5),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6], min_rrr=0.5),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6], min_rrr=0.5),
-        ])
+        ctx = _make_grid_ctx(
+            [
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 10, "sl_mult": 30},
+                    ct=[0.6],
+                    min_rrr=0.5,
+                ),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 10, "sl_mult": 20},
+                    ct=[0.6],
+                    min_rrr=0.5,
+                ),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 20, "sl_mult": 30},
+                    ct=[0.6],
+                    min_rrr=0.5,
+                ),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 20, "sl_mult": 20},
+                    ct=[0.6],
+                    min_rrr=0.5,
+                ),
+            ]
+        )
 
         np.random.seed(42)
-        inner_df = pd.DataFrame({
-            "feat1": np.random.randn(1000),
-            "feat2": np.random.randn(1000),
-        })
+        inner_df = pd.DataFrame(
+            {
+                "feat1": np.random.randn(1000),
+                "feat2": np.random.randn(1000),
+            }
+        )
 
         inner_folds = [
             MagicMock(train_idx=list(range(500)), val_idx=list(range(500, 700))),
@@ -291,7 +377,9 @@ class TestProgressCallbackSequence:
         with patch("fwbg.optimization.grid_search.select_features") as mock_select:
             mock_select.return_value = (full_pool, full_pool)
 
-            with patch("fwbg.optimization.grid_search._process_single_grid_combo") as mock_combo:
+            with patch(
+                "fwbg.optimization.grid_search._process_single_grid_combo"
+            ) as mock_combo:
                 mock_combo.return_value = (
                     {"params": (10, 20, 0.6), "inner_val_pnl": 100},
                     {"tp": 10, "sl": 20, "pnl": 100},
@@ -324,30 +412,59 @@ class TestProgressCallbackSequence:
 class TestSuccessiveHalving:
     """Tests for successive halving grid search pruning."""
 
-    def _make_ctx(self, keep_ratio=0.5, min_survivors=2, min_folds_before_pruning_ratio=0.0):
+    def _make_ctx(
+        self, keep_ratio=0.5, min_survivors=2, min_folds_before_pruning_ratio=0.0
+    ):
         ctx = MagicMock()
         ctx.early_pruning_enabled = True
         ctx.early_pruning_keep_ratio = keep_ratio
         ctx.early_pruning_min_survivors = min_survivors
-        ctx.early_pruning_min_folds_before_pruning_ratio = min_folds_before_pruning_ratio
+        ctx.early_pruning_min_folds_before_pruning_ratio = (
+            min_folds_before_pruning_ratio
+        )
         ctx.sample_weights = False
         ctx.separate_long_short = False
+        # Pruning mechanics only: the fold stubs carry no trades, so the
+        # selection rules applied at aggregation are switched off here.
+        ctx.first_fold_sanity_check = False
+        ctx.min_fold_stability = 0.0
         return ctx
 
     def _make_combos(self, n):
         """Create n dummy combo tuples with tp=10+i, sl=20."""
         combos = []
         for i in range(n):
-            combos.append((
-                10 + i, 20, None, i,
-                ["feat1"], [], MagicMock(), {},
-                0, n, None,
-                ["feat1"], ["feat1"],
-            ))
+            combos.append(
+                (
+                    10 + i,
+                    20,
+                    None,
+                    i,
+                    ["feat1"],
+                    [],
+                    self._make_ctx(),
+                    {},
+                    0,
+                    n,
+                    None,
+                    ["feat1"],
+                    ["feat1"],
+                )
+            )
         return combos
 
-    def _mock_eval(self, fold_idx, train_df, val_df, features, tp, sl, ctx,
-                   timeout_bars=None, **kwargs):
+    def _mock_eval(
+        self,
+        fold_idx,
+        train_df,
+        val_df,
+        features,
+        tp,
+        sl,
+        ctx,
+        timeout_bars=None,
+        **kwargs,
+    ):
         """Mock fold evaluation returning PnL proportional to tp."""
         return {
             "success": True,
@@ -369,19 +486,52 @@ class TestSuccessiveHalving:
 
         call_list = []
 
-        def tracking_eval(fold_idx, train_df, val_df, features, tp, sl, ctx,
-                          timeout_bars=None, **kwargs):
+        def tracking_eval(
+            fold_idx,
+            train_df,
+            val_df,
+            features,
+            tp,
+            sl,
+            ctx,
+            timeout_bars=None,
+            **kwargs,
+        ):
             call_list.append(fold_idx)
-            return self._mock_eval(fold_idx, train_df, val_df, features, tp, sl,
-                                   ctx, timeout_bars, **kwargs)
+            return self._mock_eval(
+                fold_idx,
+                train_df,
+                val_df,
+                features,
+                tp,
+                sl,
+                ctx,
+                timeout_bars,
+                **kwargs,
+            )
 
-        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=tracking_eval), \
-             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+        with (
+            patch(
+                "fwbg.optimization.grid_search._evaluate_single_fold",
+                side_effect=tracking_eval,
+            ),
+            patch(
+                "fwbg.optimization.grid_search._compute_cached_targets", return_value={}
+            ),
+        ):
             candidates, grid_results, _ = _run_with_successive_halving(
-                combos, inner_folds, ctx,
-                ["feat1"], {}, None,
-                ["feat1"], ["feat1"],
-                "TEST", None, 0, n_combos,
+                combos,
+                inner_folds,
+                ctx,
+                ["feat1"],
+                {},
+                None,
+                ["feat1"],
+                ["feat1"],
+                "TEST",
+                None,
+                0,
+                n_combos,
             )
 
         fold_counts = {}
@@ -413,13 +563,28 @@ class TestSuccessiveHalving:
             call_list.append(fold_idx)
             return self._mock_eval(fold_idx, *args, **kwargs)
 
-        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=tracking_eval), \
-             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+        with (
+            patch(
+                "fwbg.optimization.grid_search._evaluate_single_fold",
+                side_effect=tracking_eval,
+            ),
+            patch(
+                "fwbg.optimization.grid_search._compute_cached_targets", return_value={}
+            ),
+        ):
             _run_with_successive_halving(
-                combos, inner_folds, ctx,
-                ["feat1"], {}, None,
-                ["feat1"], ["feat1"],
-                "TEST", None, 0, n_combos,
+                combos,
+                inner_folds,
+                ctx,
+                ["feat1"],
+                {},
+                None,
+                ["feat1"],
+                ["feat1"],
+                "TEST",
+                None,
+                0,
+                n_combos,
             )
 
         fold_counts = {}
@@ -436,10 +601,18 @@ class TestSuccessiveHalving:
 
         ctx = _make_grid_ctx(
             [
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]
+                ),
             ],
             early_pruning_enabled=True,
             early_pruning_keep_ratio=0.5,
@@ -449,10 +622,19 @@ class TestSuccessiveHalving:
         inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
         inner_folds = [(MagicMock(), MagicMock())]  # Single fold!
 
-        with patch("fwbg.optimization.grid_search.select_features", return_value=(["feat1"], ["feat1"])), \
-             patch("fwbg.optimization.grid_search._run_with_successive_halving") as mock_sh, \
-             patch("fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
-                   return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0)):
+        with (
+            patch(
+                "fwbg.optimization.grid_search.select_features",
+                return_value=(["feat1"], ["feat1"]),
+            ),
+            patch(
+                "fwbg.optimization.grid_search._run_with_successive_halving"
+            ) as mock_sh,
+            patch(
+                "fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
+                return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0),
+            ),
+        ):
             run_grid_search(["feat1"], inner_folds, ctx, {}, "TEST", inner_df=inner_df)
             mock_sh.assert_not_called()
 
@@ -462,8 +644,12 @@ class TestSuccessiveHalving:
 
         ctx = _make_grid_ctx(
             [
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+                ),
+                ExitStrategyConfig(
+                    name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]
+                ),
             ],
             early_pruning_enabled=True,
             early_pruning_keep_ratio=0.5,
@@ -473,10 +659,19 @@ class TestSuccessiveHalving:
         inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
         inner_folds = [(MagicMock(), MagicMock()), (MagicMock(), MagicMock())]
 
-        with patch("fwbg.optimization.grid_search.select_features", return_value=(["feat1"], ["feat1"])), \
-             patch("fwbg.optimization.grid_search._run_with_successive_halving") as mock_sh, \
-             patch("fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
-                   return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0)):
+        with (
+            patch(
+                "fwbg.optimization.grid_search.select_features",
+                return_value=(["feat1"], ["feat1"]),
+            ),
+            patch(
+                "fwbg.optimization.grid_search._run_with_successive_halving"
+            ) as mock_sh,
+            patch(
+                "fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
+                return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0),
+            ),
+        ):
             run_grid_search(["feat1"], inner_folds, ctx, {}, "TEST", inner_df=inner_df)
             mock_sh.assert_not_called()
 
@@ -490,13 +685,28 @@ class TestSuccessiveHalving:
         ctx = self._make_ctx(keep_ratio=0.5, min_survivors=2)
         progress_cb = MagicMock()
 
-        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=self._mock_eval), \
-             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+        with (
+            patch(
+                "fwbg.optimization.grid_search._evaluate_single_fold",
+                side_effect=self._mock_eval,
+            ),
+            patch(
+                "fwbg.optimization.grid_search._compute_cached_targets", return_value={}
+            ),
+        ):
             _, _, progress_reported = _run_with_successive_halving(
-                combos, inner_folds, ctx,
-                ["feat1"], {}, None,
-                ["feat1"], ["feat1"],
-                "TEST", progress_cb, 0, n_combos,
+                combos,
+                inner_folds,
+                ctx,
+                ["feat1"],
+                {},
+                None,
+                ["feat1"],
+                ["feat1"],
+                "TEST",
+                progress_cb,
+                0,
+                n_combos,
             )
 
         # All combos accounted for: pruned after fold 0 (5) + after fold 1 (3) + survivors (2)
@@ -513,25 +723,51 @@ class TestSuccessiveHalving:
         inner_folds = [(MagicMock(), MagicMock()) for _ in range(2)]
         ctx = self._make_ctx(keep_ratio=0.5, min_survivors=1)
 
-        def mixed_eval(fold_idx, train_df, val_df, features, tp, sl, ctx,
-                       timeout_bars=None, **kwargs):
+        def mixed_eval(
+            fold_idx,
+            train_df,
+            val_df,
+            features,
+            tp,
+            sl,
+            ctx,
+            timeout_bars=None,
+            **kwargs,
+        ):
             # Combos 0-2 (tp=10,11,12) fail, combos 3-5 (tp=13,14,15) succeed
             if tp < 13:
                 return {"success": False}
             return {
-                "success": True, "pnl": float(tp), "best_ct": 0.5,
+                "success": True,
+                "pnl": float(tp),
+                "best_ct": 0.5,
                 "trades_by_ct": {},
                 "selected_features_long": ["feat1"],
                 "selected_features_short": ["feat1"],
             }
 
-        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=mixed_eval), \
-             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+        with (
+            patch(
+                "fwbg.optimization.grid_search._evaluate_single_fold",
+                side_effect=mixed_eval,
+            ),
+            patch(
+                "fwbg.optimization.grid_search._compute_cached_targets", return_value={}
+            ),
+        ):
             candidates, _, _ = _run_with_successive_halving(
-                combos, inner_folds, ctx,
-                ["feat1"], {}, None,
-                ["feat1"], ["feat1"],
-                "TEST", None, 0, n_combos,
+                combos,
+                inner_folds,
+                ctx,
+                ["feat1"],
+                {},
+                None,
+                ["feat1"],
+                ["feat1"],
+                "TEST",
+                None,
+                0,
+                n_combos,
             )
 
         # Only successful combos should produce candidates
@@ -562,7 +798,7 @@ class TestGridResultsInProcessSymbolOutput:
         matches = re.findall(grid_results_pattern, source)
         assert len(matches) >= 1, (
             "process_symbol sollte 'grid_results' im result Dictionary enthalten.\n"
-            "Erwartet: \"grid_results\": <variable>\n"
+            'Erwartet: "grid_results": <variable>\n'
             "Dies ist notwendig, damit grid_details Dateien gespeichert werden koennen."
         )
 
@@ -575,8 +811,11 @@ class TestProbabilityCalibration:
     """
 
     @staticmethod
-    def _make_ctx(probability_calibration=False, calibration_method="isotonic",
-                  separate_long_short=False):
+    def _make_ctx(
+        probability_calibration=False,
+        calibration_method="isotonic",
+        separate_long_short=False,
+    ):
         """Create a real SimulationContext for calibration tests."""
         return SimulationContext(
             symbol="TESTUSD",
@@ -586,15 +825,35 @@ class TestProbabilityCalibration:
             min_trades=10,
             grid_ct=[0.50, 0.55, 0.60],
             exit_strategies=[
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.50, 0.55, 0.60]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.50, 0.55, 0.60]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.50, 0.55, 0.60]),
-                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.50, 0.55, 0.60]),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 10, "sl_mult": 20},
+                    ct=[0.50, 0.55, 0.60],
+                ),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 10, "sl_mult": 30},
+                    ct=[0.50, 0.55, 0.60],
+                ),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 20, "sl_mult": 20},
+                    ct=[0.50, 0.55, 0.60],
+                ),
+                ExitStrategyConfig(
+                    name="fixed",
+                    params={"tp_mult": 20, "sl_mult": 30},
+                    ct=[0.50, 0.55, 0.60],
+                ),
             ],
             long_enabled=True,
             short_enabled=True,
             separate_long_short=separate_long_short,
-            model_hyperparameters={"n_estimators": 10, "max_depth": 2, "random_state": 42},
+            model_hyperparameters={
+                "n_estimators": 10,
+                "max_depth": 2,
+                "random_state": 42,
+            },
             probability_calibration=probability_calibration,
             calibration_method=calibration_method,
         )
@@ -606,17 +865,20 @@ class TestProbabilityCalibration:
         # Random walk price
         price = 1.1000 + np.cumsum(rng.normal(0, 0.0005, n))
         atr = np.abs(rng.normal(0.001, 0.0003, n))
-        df = pd.DataFrame({
-            "O": price,
-            "H": price + np.abs(rng.normal(0.0005, 0.0002, n)),
-            "L": price - np.abs(rng.normal(0.0005, 0.0002, n)),
-            "C": price + rng.normal(0, 0.0003, n),
-            "_atr": atr,
-            "_regime": np.full(n, 7, dtype=np.int8),
-            "feat1": rng.standard_normal(n),
-            "feat2": rng.standard_normal(n),
-            "feat3": rng.standard_normal(n),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": price,
+                "H": price + np.abs(rng.normal(0.0005, 0.0002, n)),
+                "L": price - np.abs(rng.normal(0.0005, 0.0002, n)),
+                "C": price + rng.normal(0, 0.0003, n),
+                "_atr": atr,
+                "_regime": np.full(n, 7, dtype=np.int8),
+                "feat1": rng.standard_normal(n),
+                "feat2": rng.standard_normal(n),
+                "feat3": rng.standard_normal(n),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
         return df
 
     def test_config_roundtrip(self):
@@ -624,10 +886,12 @@ class TestProbabilityCalibration:
         from fwbg.core.config import ValidationConfig
 
         # Explicit values
-        cfg = ValidationConfig.from_dict({
-            "probability_calibration": True,
-            "calibration_method": "sigmoid",
-        })
+        cfg = ValidationConfig.from_dict(
+            {
+                "probability_calibration": True,
+                "calibration_method": "sigmoid",
+            }
+        )
         assert cfg.probability_calibration is True
         assert cfg.calibration_method == "sigmoid"
 
@@ -640,22 +904,28 @@ class TestProbabilityCalibration:
         """SimulationContext.create() wires probability_calibration from StrategyConfig."""
         from fwbg.core.config import StrategyConfig
 
-        strategy = StrategyConfig.from_dict({
-            "validation": {
-                "probability_calibration": True,
-                "calibration_method": "sigmoid",
-            },
-            "exit_params": {"tp_mult": [10], "sl_mult": [20], "timeout_bars": [None]},
-            "optimization": {"ct": [0.5]},
-        })
+        strategy = StrategyConfig.from_dict(
+            {
+                "validation": {
+                    "probability_calibration": True,
+                    "calibration_method": "sigmoid",
+                },
+                "optimization": {"ct": [0.5]},
+            }
+        )
 
         from fwbg.data.assets import AssetConfig
+
         asset = AssetConfig(
-            symbol="TESTUSD", asset_class="FOREX",
-            spread=0.0002, point=0.0001, currencies=["USD"],
+            symbol="TESTUSD",
+            asset_class="FOREX",
+            spread=0.0002,
+            point=0.0001,
+            currencies=["USD"],
         )
 
         from fwbg.core.context import SimulationContext
+
         ctx = SimulationContext.create(asset, strategy)
         assert ctx.probability_calibration is True
         assert ctx.calibration_method == "sigmoid"
@@ -714,7 +984,14 @@ class TestProbabilityCalibration:
         expected_ct = sl / (tp + sl)  # 0.60
 
         best_ct, best_pnl, trades_by_ct = evaluate_on_validation(
-            val_df, mod_long, mod_short, features, features, tp, sl, ctx,
+            val_df,
+            mod_long,
+            mod_short,
+            features,
+            features,
+            tp,
+            sl,
+            ctx,
         )
 
         # CT must be the EV-optimal threshold, not from grid
@@ -744,7 +1021,14 @@ class TestProbabilityCalibration:
         tp, sl = 20, 30
 
         best_ct, best_pnl, trades_by_ct = evaluate_on_validation(
-            val_df, mod_long, mod_short, features, features, tp, sl, ctx,
+            val_df,
+            mod_long,
+            mod_short,
+            features,
+            features,
+            tp,
+            sl,
+            ctx,
         )
 
         # Grid has 3 CT values [0.50, 0.55, 0.60], all should be evaluated
@@ -775,7 +1059,14 @@ class TestProbabilityCalibration:
         expected_ct = sl / (tp + sl)  # 30/45 = 0.667
 
         best_ct, _, _ = evaluate_on_validation(
-            val_df, mod_long, mod_short, features, features, tp, sl, ctx,
+            val_df,
+            mod_long,
+            mod_short,
+            features,
+            features,
+            tp,
+            sl,
+            ctx,
         )
 
         assert isinstance(best_ct, tuple)
@@ -799,13 +1090,69 @@ class TestProbabilityCalibration:
         mod = train_model(train_df, targets[:350], features, 10, ctx)
 
         # TP=10, SL=40 -> ct = 40/50 = 0.80
-        ct1, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 10, 40, ctx)
+        ct1, _, _ = evaluate_on_validation(
+            val_df, mod, mod, features, features, 10, 40, ctx
+        )
         assert ct1 == pytest.approx(0.80)
 
         # TP=30, SL=20 -> ct = 20/50 = 0.40
-        ct2, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 30, 20, ctx)
+        ct2, _, _ = evaluate_on_validation(
+            val_df, mod, mod, features, features, 30, 20, ctx
+        )
         assert ct2 == pytest.approx(0.40)
 
         # TP=20, SL=20 -> ct = 0.50
-        ct3, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 20, 20, ctx)
+        ct3, _, _ = evaluate_on_validation(
+            val_df, mod, mod, features, features, 20, 20, ctx
+        )
         assert ct3 == pytest.approx(0.50)
+
+
+def test_a_failing_grid_combo_raises_instead_of_vanishing_from_the_results():
+    """A combo that raised was logged and dropped: no candidate, no grid result, no
+    record. It now surfaces as a GridSearchError."""
+    from fwbg.optimization.grid_search import GridSearchError, run_grid_search
+
+    ctx = _make_grid_ctx(
+        [
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+            ),
+        ]
+    )
+    inner_df = pd.DataFrame(
+        {"adx_14": np.random.default_rng(1).normal(size=300)},
+    )
+    outcomes = iter(
+        [
+            ({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {"tp_mult": 10}),
+            ValueError("combo exploded"),
+        ]
+    )
+
+    def flaky(*args, **kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    with (
+        patch("fwbg.optimization.grid_search.select_features") as mock_select,
+        patch("fwbg.optimization.grid_search._process_single_grid_combo", flaky),
+        patch(
+            "fwbg.optimization.grid_search._compute_cached_targets", return_value=None
+        ),
+    ):
+        mock_select.return_value = (["adx_14"], ["adx_14"])
+        with pytest.raises(GridSearchError, match="combo 1 failed.*combo exploded"):
+            run_grid_search(
+                full_pool=["adx_14"],
+                inner_folds=[MagicMock(), MagicMock()],
+                ctx=ctx,
+                regime_config={},
+                sym="EURUSD",
+                inner_df=inner_df,
+            )

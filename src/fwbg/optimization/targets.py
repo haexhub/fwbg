@@ -10,12 +10,16 @@ from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_exit_strategy, GridParams
-from fwbg.core.columns import resolve_role_column
+from fwbg.core.columns import ColumnRoleError, resolve_role_column
 
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
 from fwbg.pipeline.features import REGIME_LONG, REGIME_SHORT
-from fwbg.simulation.trade import simulate_pro_trade, compute_session_mask
+from fwbg.simulation.trade import (
+    simulate_pro_trade,
+    compute_session_mask,
+    resolve_entry_delay,
+)
 
 
 def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationContext):
@@ -23,6 +27,68 @@ def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationCo
     exit_strategy_class = get_exit_strategy(ctx.exit_strategy)
     exit_strategy = exit_strategy_class()
     return exit_strategy.resolve_distances(df, tp, sl, ctx)
+
+
+def resolve_trailing_params(
+    ctx: SimulationContext,
+    exit_params: Optional[dict] = None,
+    strategy: Optional[str] = None,
+) -> Tuple[float, float, int]:
+    """Breakeven/trailing settings shared by label building and evaluation.
+
+    Returns ``(breakeven_trigger, trail_atr_mult, trail_pips)``.  Strategies
+    that carry the settings themselves read them from ``exit_params``
+    (``atr_trailing``: ``breakeven_trigger``/``trail_atr_mult`` with defaults
+    0.5; ``orb_based``: ``breakeven_trigger``/``trail_pips``).  Values in
+    ``exit_modifier_params`` take precedence; every other strategy uses the
+    modifier params only.  The strategies' ``compute_targets`` and the trade
+    evaluator both call this, so the exits behind the training labels and the
+    simulated trades cannot drift apart.
+    """
+    if exit_params is None:
+        exit_params = ctx.exit_params or {}
+    modifier = getattr(ctx, "exit_modifier_params", None) or {}
+    if strategy is None:
+        strategy = getattr(ctx, "exit_strategy", None)
+
+    be, trail_mult, pips = 0.0, 0.0, 0
+    if strategy == "atr_trailing":
+        be = exit_params.get("breakeven_trigger", 0.5)
+        trail_mult = exit_params.get("trail_atr_mult", 0.5)
+    elif strategy == "orb_based":
+        be = exit_params.get("breakeven_trigger", 0.0)
+        pips = exit_params.get("trail_pips", 0)
+        if getattr(ctx, "exit_modifier", None):
+            # orb_based turns an attached modifier on with these defaults.
+            be = trail_mult = 0.5
+    be = modifier.get("breakeven_trigger", be)
+    trail_mult = modifier.get("trail_atr_mult", trail_mult)
+    return float(be), float(trail_mult), int(pips)
+
+
+def resolve_breakeven_offset(
+    ctx: SimulationContext,
+    exit_params: Optional[dict] = None,
+    strategy: Optional[str] = None,
+) -> float:
+    """Fraction of the TP distance the breakeven stop sits beyond the entry.
+
+    ``orb_based`` reads ``breakeven_offset`` from ``exit_params`` (default 0.0,
+    exactly the entry); an attached exit modifier may override it in its params.
+    Other strategies have no offset.  Counterpart of ``resolve_trailing_params``
+    for the training labels and the trade evaluator.
+    """
+    if exit_params is None:
+        exit_params = ctx.exit_params or {}
+    if strategy is None:
+        strategy = getattr(ctx, "exit_strategy", None)
+    if strategy != "orb_based":
+        return 0.0
+    offset = exit_params.get("breakeven_offset", 0.0)
+    if getattr(ctx, "exit_modifier", None):
+        modifier = getattr(ctx, "exit_modifier_params", None) or {}
+        offset = modifier.get("breakeven_offset", offset)
+    return float(offset)
 
 
 def _compute_signal_events(
@@ -53,6 +119,22 @@ def _compute_signal_events(
     return events
 
 
+def labelled_rows(targets: np.ndarray) -> np.ndarray:
+    """Mask of the rows whose label is known (not NaN).
+
+    A label window that runs past the end of the data has no outcome yet; the
+    label kernels mark it NaN (``nan_incomplete``).  Such rows are not training
+    examples: fitting and scoring drop them instead of reading them as losses.
+    """
+    return ~np.isnan(np.asarray(targets, dtype=np.float64))
+
+
+def count_positive_labels(targets: np.ndarray) -> int:
+    """Number of non-zero labels among the known ones (NaN is not a win)."""
+    targets = np.asarray(targets)
+    return int(np.count_nonzero(targets[labelled_rows(targets)]))
+
+
 def _validate_targets(
     targets_long: np.ndarray, targets_short: np.ndarray, ctx: SimulationContext
 ) -> Tuple[bool, bool]:
@@ -68,8 +150,8 @@ def _validate_targets(
         (has_long, has_short) - Boolean Tuple
     """
     min_per_direction = ctx.min_trades // 2
-    n_long = np.count_nonzero(targets_long)
-    n_short = np.count_nonzero(targets_short)
+    n_long = count_positive_labels(targets_long)
+    n_short = count_positive_labels(targets_short)
     has_long = ctx.long_enabled and n_long >= min_per_direction
     has_short = ctx.short_enabled and n_short >= min_per_direction
     return has_long, has_short
@@ -109,8 +191,10 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
             f"'{ctx.exit_strategy}'; allowed: {choices}"
         )
     sl_col = resolve_role_column(
-        df.columns, exit_params.get("sl_level_column"),
-        lambda c: c.endswith(f"_{sl_level_suffix}"), "sl_level_column",
+        df.columns,
+        exit_params.get("sl_level_column"),
+        lambda c: c.endswith(f"_{sl_level_suffix}"),
+        "sl_level_column",
     )
     if sl_col is None:
         return None
@@ -118,6 +202,36 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
     # the row falls back to the distance stop instead of a stop near zero.
     levels = df[sl_col].values.astype(np.float64)
     return np.where(np.isfinite(levels) & (levels > 0), levels, np.nan)
+
+
+EXIT_SIGNAL_PARAMS = ("exit_signal_long_column", "exit_signal_short_column")
+
+
+def resolve_exit_signals(
+    df: pd.DataFrame, exit_params: dict
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """Per-bar rule-exit flags for long and short trades, or None per side.
+
+    ``exit_signal_long_column`` / ``exit_signal_short_column`` in exit_params
+    name columns whose value 1 closes an open trade of that side at the bar's
+    close. A named column that is missing raises: trading on without the rule's
+    exits would hold positions the strategy meant to close.
+
+    Raises:
+        ColumnRoleError: a configured column is not in the frame.
+    """
+    flags = []
+    for param in EXIT_SIGNAL_PARAMS:
+        name = exit_params.get(param)
+        if not name:
+            flags.append(None)
+            continue
+        if name not in df.columns:
+            raise ColumnRoleError(
+                f"exit_params.{param} '{name}' is not a column in the frame."
+            )
+        flags.append(np.nan_to_num(df[name].values.astype(np.float64), nan=0.0) >= 1.0)
+    return flags[0], flags[1]
 
 
 def simulate_trades(
@@ -183,26 +297,39 @@ def simulate_trades(
         tp_dists = per_trade_params[:, 0].copy()
         sl_dists = per_trade_params[:, 1].copy()
 
+    # A bar whose TP or SL distance cannot be computed (NaN, e.g. while the ATR
+    # behind a model's per-trade distances warms up) is not tradable: such a
+    # signal opens no trade, and no NaN level ever reaches the simulator.
+    tradable = np.isfinite(tp_dists) & np.isfinite(sl_dists)
+
     # Absolute SL levels: when sl_level is set in exit_params, SL is
     # anchored to the structural price level from that column (e.g. OR midpoint)
     # instead of computed as entry ± sl_dist.
     # sl_level is a suffix like "or_midpoint" — auto-detect the full column name.
     exit_params = ctx.exit_params if ctx.exit_params else {}
     sl_levels = resolve_sl_levels(df, ctx, exit_params)
+    exit_signal_long, exit_signal_short = resolve_exit_signals(df, exit_params)
 
     # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
     # 1 = entry at next bar open (default, no look-ahead).
-    entry_delay = exit_params.get("entry_delay", 1)
+    entry_delay = resolve_entry_delay(exit_params)
 
-    # Trailing stop from exit_modifier_params (separate composable plugin).
-    modifier_params = getattr(ctx, "exit_modifier_params", None) or {}
-    breakeven_trigger = modifier_params.get("breakeven_trigger", 0.0)
-    trail_atr_mult = modifier_params.get("trail_atr_mult", 0.0)
+    # Breakeven/trailing: same source as the training labels.
+    breakeven_trigger, trail_atr_mult, trail_pips = resolve_trailing_params(
+        ctx, exit_params
+    )
+    breakeven_offset = resolve_breakeven_offset(ctx, exit_params)
 
     # Resolve per-bar trail distances: range mode uses the OR range as trail
     # distance (structural), ATR mode uses ATR * trail_atr_mult.
     trail_dists = np.zeros(len(df), dtype=np.float64)
-    if trail_atr_mult > 0.0:
+    if trail_pips > 0:
+        trail_dists[:] = ctx.spread * trail_pips
+    elif trail_atr_mult > 0.0 or (
+        breakeven_trigger > 0.0 and exit_params.get("tp_mode", "atr") == "range"
+    ):
+        # Range mode trails at the range once breakeven is reached, with or
+        # without ``trail_atr_mult`` (the labels do the same).
         tp_mode = exit_params.get("tp_mode", "atr")
         if tp_mode == "range":
             exit_strategy_cls = get_exit_strategy(ctx.exit_strategy)
@@ -211,15 +338,20 @@ def simulate_trades(
                 range_v = es._get_range(df, exit_params)
                 trail_dists = np.where(range_v > 0.0, range_v, 0.0).astype(np.float64)
         else:
-            atr_col = "_atr" if "_atr" in df.columns else ("vol_atr" if "vol_atr" in df.columns else None)
+            atr_col = (
+                "_atr"
+                if "_atr" in df.columns
+                else ("vol_atr" if "vol_atr" in df.columns else None)
+            )
             if atr_col:
                 atr_v = np.nan_to_num(df[atr_col].values.astype(np.float64), nan=0.0)
             else:
-                import ta
+                from fwbg.utils.indicator_math import wilder_atr
+
                 atr_period = exit_params.get("atr_period", 14)
                 atr_v = np.nan_to_num(
-                    ta.volatility.average_true_range(
-                        df["H"], df["L"], df["C"], window=atr_period,
+                    wilder_atr(
+                        df["H"], df["L"], df["C"], window=atr_period
                     ).values.astype(np.float64),
                     nan=0.0,
                 )
@@ -242,7 +374,9 @@ def simulate_trades(
         s_end = getattr(ctx, "session_end_hour", None)
     if isinstance(s_start, int) and isinstance(s_end, int):
         in_session = compute_session_mask(
-            df.index, s_start, s_end,
+            df.index,
+            s_start,
+            s_end,
             ohlc=(opn, hgh, low, cls),
         )
 
@@ -284,7 +418,8 @@ def simulate_trades(
         if i < next_allowed_entry:
             continue
 
-        direction = None
+        long_ok = False
+        short_ok = False
         # Long-Check: regime bitmask must have REGIME_LONG bit set
         if direction_filter in (None, 1):
             if (
@@ -297,12 +432,11 @@ def simulate_trades(
                 # Check signal event limit
                 if max_per_signal > 0 and long_event_ids is not None:
                     eid = long_event_ids[i]
-                    if eid > 0 and long_event_trades.get(eid, 0) < max_per_signal:
-                        direction = 1
+                    long_ok = eid > 0 and long_event_trades.get(eid, 0) < max_per_signal
                 else:
-                    direction = 1
+                    long_ok = True
         # Short-Check: regime bitmask must have REGIME_SHORT bit set
-        if direction is None and direction_filter in (None, -1):
+        if direction_filter in (None, -1):
             if (
                 regime[i] & REGIME_SHORT
                 and ctx.short_enabled
@@ -312,10 +446,20 @@ def simulate_trades(
             ):
                 if max_per_signal > 0 and short_event_ids is not None:
                     eid = short_event_ids[i]
-                    if eid > 0 and short_event_trades.get(eid, 0) < max_per_signal:
-                        direction = -1
+                    short_ok = (
+                        eid > 0 and short_event_trades.get(eid, 0) < max_per_signal
+                    )
                 else:
-                    direction = -1
+                    short_ok = True
+
+        # Opposite signals on the same bar cancel out: neither side gets
+        # priority, so a tie is no trade (with a single-direction run via
+        # direction_filter the other side is never evaluated).
+        direction = None
+        if long_ok != short_ok:
+            direction = 1 if long_ok else -1
+        if direction and not tradable[i]:
+            direction = None
 
         if direction:
             sl_abs = None
@@ -343,19 +487,31 @@ def simulate_trades(
                 sl_level_mult=sl,
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
+                breakeven_offset=breakeven_offset,
                 trail_distance=td,
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
+                exit_signal=exit_signal_long if direction == 1 else exit_signal_short,
+                financing_rate=getattr(ctx, "financing_rate", 0.0),
             )
             if trade:
-                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"],
-                     "mae": trade["mae"], "mfe": trade["mfe"]}
+                t = {
+                    "result": trade["result"],
+                    "pnl_raw": trade["pnl_raw"],
+                    "mae": trade["mae"],
+                    "mfe": trade["mfe"],
+                }
                 if has_rv:
                     rv_val = float(rv_values[i])
                     if not np.isnan(rv_val):
                         t["rv_at_entry"] = rv_val
                 trades.append(t)
-                next_allowed_entry = trade["exit_idx"] + 1
+                # A rule exit fills at the bar's close, so with close entries the
+                # same bar may open the next trade (e.g. a flip to the other side).
+                same_bar = (
+                    entry_delay == 0 and trade.get("exit_reason") == "exit_signal"
+                )
+                next_allowed_entry = trade["exit_idx"] + (0 if same_bar else 1)
 
                 # Record trade against its signal event
                 if max_per_signal > 0:
@@ -649,24 +805,27 @@ def compute_mfe_targets(
         long_entry = mid_entry + spread + slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = highs[j] - long_entry
-            if favorable > max_favorable:
-                max_favorable = favorable
+            # Stop first: when a bar reaches the stop, its high may have come
+            # after the exit, so it does not count (same SL-first convention as
+            # the simulation kernels).
             adverse = long_entry - lows[j]
             if adverse >= sl_dist:
                 break
+            favorable = highs[j] - long_entry
+            if favorable > max_favorable:
+                max_favorable = favorable
         mfe_long[i] = max_favorable / atr_i
 
         # Short: sell the bid - slippage on entry.
         short_entry = mid_entry - spread - slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = short_entry - lows[j]
-            if favorable > max_favorable:
-                max_favorable = favorable
             adverse = highs[j] - short_entry
             if adverse >= sl_dist:
                 break
+            favorable = short_entry - lows[j]
+            if favorable > max_favorable:
+                max_favorable = favorable
         mfe_short[i] = max_favorable / atr_i
 
     return mfe_long, mfe_short
@@ -704,7 +863,11 @@ def slice_targets_for_fold(
     """
     exit_strategy_mode = getattr(ctx, "exit_strategy", "fixed")
     result = compute_targets_cached(
-        fold_df, tp, sl, ctx, timeout_bars,
+        fold_df,
+        tp,
+        sl,
+        ctx,
+        timeout_bars,
         exit_strategy_mode=exit_strategy_mode,
         return_durations=return_durations,
     )
@@ -814,7 +977,11 @@ def evaluate_on_validation(
 
     # Per-trade TP/SL overrides from model (xgboost_rrr, xgboost_mfe)
     per_trade_params = None
-    atr_col = "_atr" if "_atr" in val_df.columns else ("vol_atr" if "vol_atr" in val_df.columns else None)
+    atr_col = (
+        "_atr"
+        if "_atr" in val_df.columns
+        else ("vol_atr" if "vol_atr" in val_df.columns else None)
+    )
     atr_vals = val_df[atr_col].values if atr_col else None
     if mod_long is not None:
         ptp = mod_long.get_per_trade_params(val_df[features_long], atr=atr_vals)

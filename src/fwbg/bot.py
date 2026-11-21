@@ -24,6 +24,7 @@ Beispiel:
 
     bot.run()  # Startet den Bot (Streaming oder Polling)
 """
+
 import os
 import json
 import math
@@ -37,22 +38,31 @@ from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
 import pandas as pd
-import ta
 
 from fwbg_sdk.models import BaseModel, TrainingContext
-from fwbg.adapters.broker import BrokerAdapter, OrderSide, BarData
+from fwbg.adapters.broker import BrokerAdapter, OrderSide, OrderStatus, BarData
 from fwbg.core import get_model
-from fwbg.pipeline import compute_indicator_pool
+from fwbg.pipeline import compute_indicator_pool, get_registry
+from fwbg.pipeline.features import configured_signal_columns
 from fwbg.data.loader import run_data_loading
 from fwbg.data.assets import get_asset
 from fwbg.core.risk_state import RiskState
+from fwbg.utils.indicator_math import wilder_atr
 
 logger = logging.getLogger(__name__)
+
+
+def _current_utc_hour() -> datetime:
+    """Start of the current hour as naive UTC, the convention of the bar index."""
+    return datetime.now(timezone.utc).replace(
+        tzinfo=None, minute=0, second=0, microsecond=0
+    )
 
 
 @dataclass
 class AssetConfig:
     """Konfiguration für ein einzelnes Asset (vom Optimizer)."""
+
     symbol: str
     features: List[str]
     conf_thresh: float = 0.55
@@ -82,6 +92,7 @@ class AssetConfig:
 @dataclass
 class Signal:
     """Trading Signal vom Bot."""
+
     symbol: str
     direction: OrderSide
     probability: float
@@ -172,14 +183,22 @@ class TradingBot:
         self.max_risk_percent = account_config.get("max_risk_percent", 0.05)
 
         # Risk Management - Position Limits
-        self.max_concurrent_positions = account_config.get("max_concurrent_positions", 5)
+        self.max_concurrent_positions = account_config.get(
+            "max_concurrent_positions", 5
+        )
         self.max_position_per_symbol = account_config.get("max_position_per_symbol", 1)
-        self.max_total_exposure_percent = account_config.get("max_total_exposure_percent", 0.20)
+        self.max_total_exposure_percent = account_config.get(
+            "max_total_exposure_percent", 0.20
+        )
 
         # Circuit Breaker - Drawdown Protection
-        self.circuit_breaker_enabled = account_config.get("circuit_breaker_enabled", True)
+        self.circuit_breaker_enabled = account_config.get(
+            "circuit_breaker_enabled", True
+        )
         self.max_daily_loss_percent = account_config.get("max_daily_loss_percent", 0.05)
-        self.pause_after_consecutive_losses = account_config.get("pause_after_consecutive_losses", 3)
+        self.pause_after_consecutive_losses = account_config.get(
+            "pause_after_consecutive_losses", 3
+        )
         self.pause_duration_minutes = account_config.get("pause_duration_minutes", 60)
 
         # Circuit Breaker State
@@ -207,6 +226,84 @@ class TradingBot:
         # persisted to status.json.
         self._equity_curve: List[Dict[str, Any]] = []
         self._starting_equity: float | None = None
+
+        # Restart safety: a signal already acted on in the current hour must not
+        # fire again after a restart.
+        self._load_state()
+
+    def _state_path(self) -> Path:
+        """File holding the bot state that must survive a restart."""
+        return Path(self.stats_dir) / self.account_id / "bot_state.json"
+
+    def _load_state(self) -> None:
+        """Restore ``last_signal_hour`` from the state file.
+
+        A missing file is a fresh start. An unreadable one is treated as
+        unknown: every asset counts as already signalled for the current hour,
+        so nothing can fire twice, and trading resumes with the next hour.
+        """
+        path = self._state_path()
+        try:
+            raw = path.read_text()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            self._assume_signalled_this_hour(f"cannot read {path}: {exc}")
+            return
+        try:
+            hours = json.loads(raw)["last_signal_hour"]
+            self.last_signal_hour = {
+                str(symbol): datetime.fromisoformat(stamp)
+                for symbol, stamp in hours.items()
+            }
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            self._assume_signalled_this_hour(f"cannot parse {path}: {exc}")
+
+    def _assume_signalled_this_hour(self, reason: str) -> None:
+        logger.error(
+            f"❌ Bot state unreadable ({reason}); blocking new signals for the "
+            "current hour"
+        )
+        hour = _current_utc_hour()
+        self.last_signal_hour = {symbol: hour for symbol in self.assets}
+
+    def _save_state(self) -> bool:
+        """Atomically write the restart state; False if it could not be saved."""
+        path = self._state_path()
+        tmp = path.with_name(path.name + ".tmp")
+        payload = {
+            "last_signal_hour": {
+                symbol: hour.isoformat()
+                for symbol, hour in self.last_signal_hour.items()
+            }
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, "w") as f:
+                json.dump(payload, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+            return True
+        except OSError as exc:
+            logger.error(f"❌ Failed to persist bot state to {path}: {exc}")
+            return False
+
+    def _mark_signal_hour(self, symbol: str, hour: datetime) -> bool:
+        """Record (and persist) that ``symbol`` signalled in ``hour``.
+
+        Returns False, leaving the in-memory state unchanged, when it could not
+        be persisted: an unpersisted signal could fire again after a restart.
+        """
+        previous = self.last_signal_hour.get(symbol)
+        self.last_signal_hour[symbol] = hour
+        if self._save_state():
+            return True
+        if previous is None:
+            del self.last_signal_hour[symbol]
+        else:
+            self.last_signal_hour[symbol] = previous
+        return False
 
     def initialize(self) -> bool:
         """
@@ -244,6 +341,12 @@ class TradingBot:
         Trainiert ein XGBoost Model für ein Symbol.
 
         Füllt gleichzeitig den OHLC und Feature Cache.
+
+        Hinweis: Das Live-Modell ist NICHT das gebacktestete Modell. Es wird bei
+        jedem Start neu auf den letzten 1000 Stunden-Bars des Brokers trainiert
+        (feste Hyperparameter, kein Hold-out); aus der Optimizer-Konfiguration
+        stammen nur Features, Schwellen und SL/TP-Multiplikatoren. Backtest-
+        Ergebnisse sind daher kein Nachweis für dieses Modell.
         """
         try:
             logger.info(f"📊 {symbol}: Loading historical data...")
@@ -255,8 +358,16 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: No data available")
                 return False
 
+            # Historical providers can include the still-forming current hour.
+            df = df[df.index < _current_utc_hour()]
+            if df.empty:
+                logger.warning(f"⚠️ {symbol}: No completed bars available")
+                return False
+
             if len(df) < self.min_training_samples:
-                logger.warning(f"⚠️ {symbol}: Not enough data ({len(df)} < {self.min_training_samples})")
+                logger.warning(
+                    f"⚠️ {symbol}: Not enough data ({len(df)} < {self.min_training_samples})"
+                )
                 return False
 
             # Cache füllen
@@ -273,12 +384,28 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: Missing features: {missing[:5]}...")
                 return False
 
+            unshifted = self._unshifted_signal_features(cfg.features)
+            if unshifted:
+                logger.warning(
+                    f"⚠️ {symbol}: features {unshifted[:5]} are unshifted signal "
+                    "columns (row i uses bar i's own close); the optimizer keeps "
+                    "them out of the model pool, so this feature list predates "
+                    "that rule. Retrain it with the current optimizer."
+                )
+
             # Target erstellen
-            df["Target"] = (df["C"].shift(-1) > df["C"]).astype(int)
+            # The last bar has no next close: it must stay unlabelled (NaN), not
+            # become a "down" sample.
+            next_close = df["C"].shift(-1)
+            df["Target"] = (
+                (next_close > df["C"]).astype(float).where(next_close.notna())
+            )
             df_train = df.dropna(subset=cfg.features + ["Target"])
 
             if len(df_train) < self.min_training_samples:
-                logger.warning(f"⚠️ {symbol}: Not enough training samples ({len(df_train)})")
+                logger.warning(
+                    f"⚠️ {symbol}: Not enough training samples ({len(df_train)})"
+                )
                 return False
 
             # Model trainieren
@@ -286,9 +413,12 @@ class TradingBot:
             model = model_class()
             training_context = TrainingContext()
             model.train(
-                df_train[cfg.features], df_train["Target"].values,
+                df_train[cfg.features],
+                df_train["Target"].astype(int).values,
                 training_context,
-                n_estimators=100, max_depth=5, random_state=42,
+                n_estimators=100,
+                max_depth=5,
+                random_state=42,
             )
 
             self.models[symbol] = model
@@ -299,6 +429,21 @@ class TradingBot:
             logger.error(f"❌ {symbol}: Training failed: {e}")
             return False
 
+    @staticmethod
+    def _unshifted_signal_features(features: List[str]) -> List[str]:
+        """The *features* that an indicator declares as unshifted signal columns."""
+        from fwbg_sdk import PluginPhase
+
+        registry = get_registry()
+        registry.auto_discover()
+        names = [
+            name
+            for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
+            if not registry.get(name).stateful
+        ]
+        declared = set(configured_signal_columns(names))
+        return [f for f in features if f in declared]
+
     def _compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Berechnet alle Features für einen DataFrame."""
         df = df.copy()
@@ -307,7 +452,7 @@ class TradingBot:
         df = compute_indicator_pool(df)
 
         # Data Loading (Macro etc.) via Plugin-System
-        if hasattr(self, '_data_loading_configs') and self._data_loading_configs:
+        if hasattr(self, "_data_loading_configs") and self._data_loading_configs:
             df = run_data_loading(df, self._data_loading_configs)
 
         return df
@@ -430,8 +575,7 @@ class TradingBot:
 
     def _check_all_signals(self):
         """Prüft Signale für alle Symbole (Polling-Modus)."""
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_hour = _current_utc_hour()
 
         for symbol in self.models.keys():
             # Verhindere mehrfache Signale pro Stunde
@@ -446,29 +590,34 @@ class TradingBot:
 
     def _update_cache_if_needed(self, symbol: str):
         """Aktualisiert den Cache wenn eine neue Stunde begonnen hat."""
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_hour = _current_utc_hour()
 
+        # The newest complete bar opened an hour ago; the current one is still forming.
         last_time = self.last_bar_time.get(symbol)
-        if last_time is not None and last_time >= current_hour:
+        if last_time is not None and last_time >= current_hour - timedelta(hours=1):
             return  # Cache ist aktuell
 
         # Neue Daten holen
         try:
             df = self.adapter.get_historical_bars(symbol, timeframe="1H", limit=24)
+            if df is not None:
+                # Training used completed bars only: never predict on the forming one.
+                df = df[df.index < current_hour]
             if df is not None and not df.empty:
                 # Mit bestehendem Cache mergen
                 if symbol in self.ohlc_cache:
                     old_df = self.ohlc_cache[symbol]
                     combined = pd.concat([old_df, df])
-                    combined = combined[~combined.index.duplicated(keep='last')]
+                    combined = combined[~combined.index.duplicated(keep="last")]
                     combined = combined.sort_index().tail(1000)
                     self.ohlc_cache[symbol] = combined
                 else:
                     self.ohlc_cache[symbol] = df
 
                 self.last_bar_time[symbol] = self.ohlc_cache[symbol].index[-1]
-                self.features_cache[symbol] = self._compute_features(self.ohlc_cache[symbol])
+                self.features_cache[symbol] = self._compute_features(
+                    self.ohlc_cache[symbol]
+                )
 
         except Exception as e:
             logger.warning(f"⚠️ {symbol}: Cache update failed: {e}")
@@ -483,8 +632,7 @@ class TradingBot:
         if not cfg:
             return
 
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_hour = _current_utc_hour()
 
         # Verhindere mehrfache Signale pro Stunde
         if self.last_signal_hour.get(symbol) == current_hour:
@@ -515,18 +663,18 @@ class TradingBot:
                 direction = OrderSide.SELL
 
             if direction:
-                self.last_signal_hour[symbol] = current_hour
+                if not self._mark_signal_hour(symbol, current_hour):
+                    logger.error(
+                        f"❌ {symbol}: signal not executed, state could not be persisted"
+                    )
+                    return
                 self._execute_signal(symbol, direction, prob, cfg)
 
         except Exception as e:
             logger.error(f"❌ {symbol}: Signal check failed: {e}")
 
     def _execute_signal(
-        self,
-        symbol: str,
-        direction: OrderSide,
-        probability: float,
-        cfg: AssetConfig
+        self, symbol: str, direction: OrderSide, probability: float, cfg: AssetConfig
     ):
         """
         Führt ein Signal aus - delegiert an den Adapter.
@@ -565,22 +713,44 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: Not enough data for ATR")
                 return
 
-            atr = ta.volatility.average_true_range(
-                ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]
-            ).iloc[-1]
+            atr = wilder_atr(ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]).iloc[-1]
             if pd.isna(atr) or atr <= 0:
                 logger.warning(f"⚠️ {symbol}: ATR unavailable (NaN/0) — skipping signal")
                 return
 
             # Position Sizing
-            risk_cash = min(balance * cfg.risk_per_trade, balance * self.max_risk_percent)
+            risk_cash = min(
+                balance * cfg.risk_per_trade, balance * self.max_risk_percent
+            )
+            if not cfg.point_value > 0:
+                logger.warning(f"⚠️ {symbol}: invalid point_value — skipping signal")
+                return
             sl_dist = max(10, int((atr * cfg.sl_mult) / cfg.point_value))
             tp_dist = int((atr * cfg.tp_mult) / cfg.point_value)
-            requested_size = round(risk_cash / sl_dist, 2)
+
+            # Risk per size unit = stop distance (points) x account-currency value
+            # of one point, which depends on the contract and FX conversion. The
+            # broker supplies it; without it the risk cannot be bounded, so the
+            # trade is refused instead of guessing.
+            value_per_point = self.adapter.get_value_per_point(symbol, cfg.point_value)
+            if (
+                not isinstance(value_per_point, (int, float))
+                or not math.isfinite(value_per_point)
+                or value_per_point <= 0
+            ):
+                logger.warning(
+                    f"⚠️ {symbol}: value per point unavailable — refusing to size "
+                    "the trade without instrument metadata"
+                )
+                return
+            # Round down: the risk budget is a ceiling.
+            requested_size = (
+                math.floor(risk_cash / (sl_dist * value_per_point) * 100 + 1e-9) / 100
+            )
             if requested_size < self.min_lot_size:
                 logger.warning(
                     f"⚠️ {symbol}: Minimum lot {self.min_lot_size} exceeds risk budget "
-                    f"({risk_cash:.2f} / {sl_dist})"
+                    f"({risk_cash:.2f} / ({sl_dist} x {value_per_point:.6g}))"
                 )
                 return
             size = max(self.min_lot_size, requested_size)
@@ -604,7 +774,13 @@ class TradingBot:
 
                 # Signal price: last known close at decision time. Reused
                 # below for slippage tracking (plan 016 — paper fidelity).
-                expected_price = self.ohlc_cache.get(symbol, pd.DataFrame()).get("C", pd.Series()).iloc[-1] if symbol in self.ohlc_cache else None
+                expected_price = (
+                    self.ohlc_cache.get(symbol, pd.DataFrame())
+                    .get("C", pd.Series())
+                    .iloc[-1]
+                    if symbol in self.ohlc_cache
+                    else None
+                )
 
                 # Assumed spread for symbol, persisted at data-download time
                 # (fwbg.data.assets.save_asset_spread). Best-effort, never raises.
@@ -620,7 +796,9 @@ class TradingBot:
                     direction=direction,
                     size=size,
                     fill_price=result.fill_price,
-                    signal_price=float(expected_price) if expected_price is not None else None,
+                    signal_price=float(expected_price)
+                    if expected_price is not None
+                    else None,
                     assumed_spread=assumed_spread,
                 )
 
@@ -629,13 +807,22 @@ class TradingBot:
                     if expected_price:
                         slippage = abs(result.fill_price - expected_price)
                         if slippage > 0:
-                            self.slippage_warnings.append({
-                                "symbol": symbol,
-                                "time": datetime.now().isoformat(),
-                                "expected": expected_price,
-                                "actual": result.fill_price,
-                                "slippage": slippage
-                            })
+                            self.slippage_warnings.append(
+                                {
+                                    "symbol": symbol,
+                                    "time": datetime.now().isoformat(),
+                                    "expected": expected_price,
+                                    "actual": result.fill_price,
+                                    "slippage": slippage,
+                                }
+                            )
+            elif result.status == OrderStatus.PENDING:
+                # The broker may or may not have accepted the order. Neither a
+                # fill nor a rejection: log loudly, do not retry this signal.
+                logger.critical(
+                    f"🚨 {symbol}: order status UNKNOWN - {result.message}. "
+                    "Verify open positions at the broker."
+                )
             else:
                 logger.warning(f"⚠️ {symbol}: Order rejected - {result.message}")
                 # Rejections are diagnostics, never realized losses.
@@ -651,18 +838,23 @@ class TradingBot:
         self._stop_event.set()
         self._running = False
 
-    def kill(self, close_positions: bool = True):
+    def kill(self, close_positions: bool = True) -> bool:
         """
         Emergency Kill Switch - Stoppt sofort allen Handel.
 
         Args:
             close_positions: Wenn True, werden alle offenen Positionen geschlossen
+
+        Returns:
+            False wenn Positionen geschlossen werden sollten und das nicht
+            vollständig gelang
         """
         logger.critical("🚨 KILL SWITCH ACTIVATED")
         self._killed = True
         self._stop_event.set()
         self._running = False
 
+        all_closed = True
         if close_positions:
             logger.warning("🚨 Closing ALL positions...")
             try:
@@ -672,10 +864,13 @@ class TradingBot:
                 logger.warning(f"🚨 Closed {closed}/{len(results)} positions")
                 for r in failed:
                     logger.error(f"❌ Position NOT closed: {r.message}")
+                all_closed = not failed
             except Exception as e:
                 logger.error(f"❌ Failed to close positions: {e}")
+                all_closed = False
 
         self._write_status("KILLED")
+        return all_closed
 
     def _check_kill_switch(self) -> bool:
         """
@@ -690,11 +885,13 @@ class TradingBot:
         # Prüfe auf Kill-Signal-Datei
         kill_file = os.path.join(self.stats_dir, "kill_signal")
         if os.path.exists(kill_file):
-            try:
-                os.remove(kill_file)
-            except Exception:
-                pass
-            self.kill(close_positions=True)
+            # Keep the signal while positions may still be open, so the next
+            # start retries closing them instead of trading on.
+            if self.kill(close_positions=True):
+                try:
+                    os.remove(kill_file)
+                except OSError:
+                    pass
             return True
 
         return False
@@ -722,10 +919,11 @@ class TradingBot:
 
         if not self._risk_state.can_trade():
             if self._risk_state.unknown_reason:
-                logger.warning(
-                    f"🚨 Circuit breaker: {self._risk_state.unknown_reason}"
-                )
-            elif self._risk_state.consecutive_losses >= self.pause_after_consecutive_losses:
+                logger.warning(f"🚨 Circuit breaker: {self._risk_state.unknown_reason}")
+            elif (
+                self._risk_state.consecutive_losses
+                >= self.pause_after_consecutive_losses
+            ):
                 logger.warning(
                     f"🚨 Circuit breaker: {self._risk_state.consecutive_losses} "
                     f"consecutive realized losses"
@@ -781,7 +979,9 @@ class TradingBot:
             # Maximale Positionen pro Symbol
             symbol_positions = sum(1 for p in positions if p.symbol == symbol)
             if symbol_positions >= self.max_position_per_symbol:
-                logger.warning(f"⚠️ {symbol}: Already have {symbol_positions} position(s)")
+                logger.warning(
+                    f"⚠️ {symbol}: Already have {symbol_positions} position(s)"
+                )
                 return False
 
             # Maximale Gesamt-Exposure
@@ -845,7 +1045,9 @@ class TradingBot:
             try:
                 self._write_strategy_positions_json()
             except Exception as exc:  # noqa: BLE001
-                logger.warning(f"Failed to write strategy positions.json telemetry: {exc}")
+                logger.warning(
+                    f"Failed to write strategy positions.json telemetry: {exc}"
+                )
 
     # =========================================================================
     # M6a — per-strategy paper/live telemetry
@@ -989,7 +1191,9 @@ class TradingBot:
                 unrealised_pnl_pct = None
             side_attr = getattr(pos, "direction", None)
             side_value = (
-                side_attr.value.lower() if hasattr(side_attr, "value") else str(side_attr).lower()
+                side_attr.value.lower()
+                if hasattr(side_attr, "value")
+                else str(side_attr).lower()
             )
             positions_payload.append(
                 {
@@ -1059,7 +1263,11 @@ def run_bot_from_config(
     account_config["account_id"] = os.path.basename(account_dir)
 
     # Resolve strategy_slug: kwarg wins over the optional file-key.
-    effective_slug = strategy_slug if strategy_slug is not None else account_config.get("strategy_slug")
+    effective_slug = (
+        strategy_slug
+        if strategy_slug is not None
+        else account_config.get("strategy_slug")
+    )
     if effective_slug is not None:
         for sym_cfg in assets_config.values():
             sym_cfg["strategy_slug"] = effective_slug

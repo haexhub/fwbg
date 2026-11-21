@@ -1,4 +1,5 @@
 """Chart data endpoints — OHLCV data and indicator computation for charting UI."""
+
 import inspect
 import math
 from collections import defaultdict
@@ -8,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from fwbg_sdk.enums import Timeframe
+
+from fwbg.api._paths import validate_id
 
 from fwbg.data.resample import (
     TIMEFRAME_ORDER as _TIMEFRAME_ORDER,
@@ -23,6 +26,7 @@ def _canon_tf(tf: str) -> str | None:
     except ValueError:
         return None
 
+
 router = APIRouter(prefix="/chart", tags=["chart"])
 
 
@@ -32,6 +36,14 @@ def _call_plugin_method(method, params):
     if len(sig.parameters) > 0 and params is not None:
         return method(params)
     return method()
+
+
+def _undo_feature_shift(df, columns: list[str], unshifted: set[str]) -> None:
+    """Move indicator columns back one bar, in place, so each value sits on the
+    bar whose close produced it. Columns in ``unshifted`` already do."""
+    for col in columns:
+        if col not in unshifted:
+            df[col] = df[col].shift(-1)
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +59,9 @@ def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
         return []
 
     # Find lowest native timeframe index
-    indices = [_TIMEFRAME_ORDER.index(tf) for tf in native_tfs if tf in _TIMEFRAME_ORDER]
+    indices = [
+        _TIMEFRAME_ORDER.index(tf) for tf in native_tfs if tf in _TIMEFRAME_ORDER
+    ]
     if not indices:
         return native_tfs  # unknown timeframes, return as-is
 
@@ -82,7 +96,9 @@ def _best_native_file(ds, symbol: str, target_tf: str):
     if path.exists():
         return path, target_tf
 
-    target_idx = _TIMEFRAME_ORDER.index(target_tf) if target_tf in _TIMEFRAME_ORDER else -1
+    target_idx = (
+        _TIMEFRAME_ORDER.index(target_tf) if target_tf in _TIMEFRAME_ORDER else -1
+    )
     if target_idx < 0:
         return None, None
 
@@ -103,6 +119,7 @@ def _best_native_file(ds, symbol: str, target_tf: str):
 # ---------------------------------------------------------------------------
 # GET /api/chart/sources — list available CSV data sources with symbols
 # ---------------------------------------------------------------------------
+
 
 @router.get("/sources")
 def list_sources() -> list[dict]:
@@ -134,20 +151,24 @@ def list_sources() -> list[dict]:
             asset = registry.get(symbol)
             native_tfs = symbols_map[symbol]
             all_tfs = _derivable_timeframes(native_tfs)
-            symbols_list.append({
-                "symbol": symbol,
-                "timeframes": all_tfs,
-                "asset_class": asset.asset_class,
-                "point": asset.point,
-                "spread": asset.spread,
-            })
+            symbols_list.append(
+                {
+                    "symbol": symbol,
+                    "timeframes": all_tfs,
+                    "asset_class": asset.asset_class,
+                    "point": asset.point,
+                    "spread": asset.spread,
+                }
+            )
 
-        result.append({
-            "name": name,
-            "type": "csv",
-            "description": source.description,
-            "symbols": symbols_list,
-        })
+        result.append(
+            {
+                "name": name,
+                "type": "csv",
+                "description": source.description,
+                "symbols": symbols_list,
+            }
+        )
 
     return result
 
@@ -155,6 +176,7 @@ def list_sources() -> list[dict]:
 # ---------------------------------------------------------------------------
 # GET /api/chart/ohlcv — load OHLCV data from a CSV data source
 # ---------------------------------------------------------------------------
+
 
 def _resolve_source(source: Optional[str]) -> str:
     """Resolve the data-source name when the client sent none.
@@ -201,6 +223,8 @@ def get_ohlcv(
     drop_flat_bars: bool = Query(False),
 ) -> dict:
     """Load OHLCV data from a CSV data source for charting."""
+    validate_id(symbol, "symbol")
+    validate_id(timeframe, "timeframe")
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
     from fwbg.data.loader import load_data_aligned
 
@@ -211,7 +235,9 @@ def get_ohlcv(
         raise HTTPException(404, str(e))
 
     if not isinstance(ds, CSVSourceConfig):
-        raise HTTPException(400, f"Source '{source}' is not a CSV source. Use POST for broker data.")
+        raise HTTPException(
+            400, f"Source '{source}' is not a CSV source. Use POST for broker data."
+        )
 
     # Try exact file first, then find a lower timeframe to resample from
     path = ds.get_file_path(symbol, timeframe)
@@ -219,7 +245,9 @@ def get_ohlcv(
     if not path.exists():
         path, native_tf = _best_native_file(ds, symbol, timeframe)
         if not path:
-            raise HTTPException(404, f"Data file not found: {symbol}_{timeframe} in {source}")
+            raise HTTPException(
+                404, f"Data file not found: {symbol}_{timeframe} in {source}"
+            )
 
     df = load_data_aligned(str(path))
     if df is None or df.empty:
@@ -263,6 +291,7 @@ def get_ohlcv(
 # ---------------------------------------------------------------------------
 # POST /api/chart/ohlcv — load OHLCV via broker adapter (credentials in body)
 # ---------------------------------------------------------------------------
+
 
 class BrokerOhlcvRequest(BaseModel):
     symbol: str
@@ -335,6 +364,7 @@ def _create_broker_adapter(broker_type: str, credentials: dict):
     """Create a broker adapter from type string and credentials dict."""
     if broker_type == "ig":
         from fwbg_broker_ig import IGBrokerAdapter
+
         return IGBrokerAdapter(
             username=credentials["username"],
             password=credentials["password"],
@@ -347,6 +377,7 @@ def _create_broker_adapter(broker_type: str, credentials: dict):
 # ---------------------------------------------------------------------------
 # POST /api/chart/indicator — compute indicator on OHLCV data
 # ---------------------------------------------------------------------------
+
 
 class IndicatorRequest(BaseModel):
     symbol: str
@@ -373,6 +404,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     if body.credentials and body.broker_type:
         # Broker source
         from fwbg_sdk import Symbol
+
         try:
             tf = Timeframe.from_str(body.timeframe)
         except ValueError:
@@ -403,13 +435,19 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         except ValueError as e:
             raise HTTPException(404, str(e))
         if not isinstance(ds, CSVSourceConfig):
-            raise HTTPException(400, f"Source '{source}' is not CSV. Provide credentials for broker.")
+            raise HTTPException(
+                400, f"Source '{source}' is not CSV. Provide credentials for broker."
+            )
+        validate_id(body.symbol, "symbol")
+        validate_id(body.timeframe, "timeframe")
         path = ds.get_file_path(body.symbol, body.timeframe)
         native_tf = body.timeframe
         if not path.exists():
             path, native_tf = _best_native_file(ds, body.symbol, body.timeframe)
             if not path:
-                raise HTTPException(404, f"Data not found: {body.symbol}_{body.timeframe}")
+                raise HTTPException(
+                    404, f"Data not found: {body.symbol}_{body.timeframe}"
+                )
         df = load_data_aligned(str(path))
         if native_tf != body.timeframe and df is not None and not df.empty:
             df = _resample_ohlcv(df, body.timeframe)
@@ -431,12 +469,21 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         ind_tf = None
     if ind_tf and ind_tf != body.timeframe:
         chart_canon = _canon_tf(body.timeframe)
-        chart_idx = _TIMEFRAME_ORDER.index(chart_canon) if chart_canon in _TIMEFRAME_ORDER else -1
-        ind_idx = _TIMEFRAME_ORDER.index(ind_canon) if ind_canon in _TIMEFRAME_ORDER else -1
+        chart_idx = (
+            _TIMEFRAME_ORDER.index(chart_canon)
+            if chart_canon in _TIMEFRAME_ORDER
+            else -1
+        )
+        ind_idx = (
+            _TIMEFRAME_ORDER.index(ind_canon) if ind_canon in _TIMEFRAME_ORDER else -1
+        )
         if ind_idx < 0 or chart_idx < 0:
             raise HTTPException(400, f"Unknown timeframe: {ind_tf}")
         if ind_idx <= chart_idx:
-            raise HTTPException(400, f"indicator_timeframe ({ind_tf}) must be higher than chart timeframe ({body.timeframe})")
+            raise HTTPException(
+                400,
+                f"indicator_timeframe ({ind_tf}) must be higher than chart timeframe ({body.timeframe})",
+            )
         chart_df = df
         if body.credentials and body.broker_type:
             raise HTTPException(501, "MTF via broker not yet supported")
@@ -446,7 +493,10 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             if not ind_path.exists():
                 ind_path, ind_native_tf = _best_native_file(ds, body.symbol, ind_tf)
                 if not ind_path:
-                    raise HTTPException(404, f"Data not found for indicator timeframe: {body.symbol}_{ind_tf}")
+                    raise HTTPException(
+                        404,
+                        f"Data not found for indicator timeframe: {body.symbol}_{ind_tf}",
+                    )
             ind_df = load_data_aligned(str(ind_path))
             if ind_native_tf != ind_tf and ind_df is not None and not ind_df.empty:
                 ind_df = _resample_ohlcv(ind_df, ind_tf)
@@ -469,6 +519,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     point_params = ["breakout_threshold_abs", "min_range_height"]
     if any(params.get(p, 0) > 0 for p in point_params):
         from fwbg.data.assets import AssetRegistry
+
         asset = AssetRegistry().get(body.symbol)
         for p in point_params:
             if params.get(p, 0) > 0:
@@ -478,31 +529,52 @@ def compute_indicator(body: IndicatorRequest) -> dict:
 
     # --- Extract feature columns ---
     feature_cols = _call_plugin_method(plugin.get_feature_columns, params)
-    available_cols = [c for c in feature_cols if c in result_df.columns and not c.startswith("_")]
+    available_cols = [
+        c for c in feature_cols if c in result_df.columns and not c.startswith("_")
+    ]
 
     # --- Overlay columns (price-scale, for main chart) ---
     overlay_cols = []
     if hasattr(plugin, "get_overlay_columns"):
-        overlay_cols = [c for c in _call_plugin_method(plugin.get_overlay_columns, params)
-                        if c in result_df.columns]
+        overlay_cols = [
+            c
+            for c in _call_plugin_method(plugin.get_overlay_columns, params)
+            if c in result_df.columns
+        ]
 
-    # --- Classify columns via plugin methods (needed before undo-shift) ---
-    plugin_signal_cols = set(_call_plugin_method(plugin.get_signal_columns, params)) if hasattr(plugin, "get_signal_columns") else set()
+    # --- Classify columns via plugin methods ---
+    plugin_signal_cols = (
+        set(_call_plugin_method(plugin.get_signal_columns, params))
+        if hasattr(plugin, "get_signal_columns")
+        else set()
+    )
+    unshifted_cols = (
+        set(_call_plugin_method(plugin.get_unshifted_columns, params))
+        if hasattr(plugin, "get_unshifted_columns")
+        else set()
+    )
+    continuous_signal_cols = (
+        set(_call_plugin_method(plugin.get_continuous_signal_columns, params))
+        if hasattr(plugin, "get_continuous_signal_columns")
+        else set()
+    )
 
     # --- Adjust shift for chart display ---
-    # Non-signal columns: undo shift_features (+1) so values appear at the
-    # bar where they were computed.
-    # Signal columns: shift +1 so signal markers align with trade entries
-    # (signal fires at bar N close, entry at bar N+1 open → show at N+1).
-    # Signal columns are NOT shifted by the indicator (no lookahead shift
-    # needed since simulate_pro_trade already enters at idx+1).
-    for col in available_cols:
-        if col in plugin_signal_cols:
-            result_df[col] = result_df[col].shift(1)
-        else:
-            result_df[col] = result_df[col].shift(-1)
-    for col in overlay_cols:
-        result_df[col] = result_df[col].shift(-1)
+    # A chart is a view, not a model input: every value is drawn on the bar
+    # whose close produced it. Columns shifted by the indicator
+    # (``shift_features``, the default) are moved back one bar; this holds for
+    # signal columns too, so a flip decided at the close of bar N is marked on
+    # bar N, not on N+1 (the bar it is visible to a model) or N+2. Columns the
+    # indicator already emits unshifted (``get_unshifted_columns``) are left
+    # alone.
+    _undo_feature_shift(result_df, available_cols, unshifted_cols)
+    # Overlay columns: undo the shift too, so a single-timeframe line sits at the
+    # bar whose close produced it. With an indicator timeframe the rows are
+    # higher-timeframe candles that get held across all chart bars of the
+    # candle; undoing the shift there would draw a level computed from the
+    # candle's close during that same candle, so the model-facing shift stays.
+    if chart_df is None:
+        _undo_feature_shift(result_df, overlay_cols, unshifted_cols)
 
     # --- MTF: forward-fill indicator columns to chart timeframe ---
     # Continuous columns (plot + overlay) are forward-filled so each lower-TF bar
@@ -528,7 +600,11 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     end_idx = total - body.offset
     start_idx = max(0, end_idx - effective_limit)
     result_slice = result_df.iloc[start_idx:end_idx]
-    plugin_plot_cols = set(_call_plugin_method(plugin.get_plot_columns, params)) if hasattr(plugin, "get_plot_columns") else set()
+    plugin_plot_cols = (
+        set(_call_plugin_method(plugin.get_plot_columns, params))
+        if hasattr(plugin, "get_plot_columns")
+        else set()
+    )
 
     # --- Build response ---
     columns_data = {}
@@ -556,6 +632,10 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             elif unique_vals:
                 signal_columns.append(col)
 
+    discrete_signal_columns = [
+        col for col in signal_columns if col not in continuous_signal_cols
+    ]
+
     timestamps = [int(ts.timestamp() * 1000) for ts in result_slice.index]
 
     # --- Overlay data (absolute price-scale values for main chart) ---
@@ -572,6 +652,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         "columns": available_cols,
         "plot_columns": plot_columns,
         "signal_columns": signal_columns,
+        "discrete_signal_columns": discrete_signal_columns,
         "overlay_columns": overlay_cols,
         "overlay_data": overlay_data,
         "timestamps": timestamps,
@@ -584,8 +665,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         ts_start = timestamps[0] if timestamps else 0
         ts_end = timestamps[-1] if timestamps else 0
         response["range_zones"] = [
-            z for z in raw_zones
-            if z["end_ts"] >= ts_start and z["start_ts"] <= ts_end
+            z for z in raw_zones if z["end_ts"] >= ts_start and z["start_ts"] <= ts_end
         ]
 
     return response

@@ -98,4 +98,5 @@ def file_history(repo_dir: Path, filename: str, limit: int = 50) -> list[dict]:
 
 def file_at_commit(repo_dir: Path, filename: str, ref: str) -> str:
     """Return the raw file content at a given git ref."""
-    return _run(["show", f"{ref}:{filename}"], cwd=repo_dir)
+    # *ref* comes from the URL: never let it be parsed as an option (--output=…).
+    return _run(["show", "--end-of-options", f"{ref}:{filename}"], cwd=repo_dir)

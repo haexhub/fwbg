@@ -24,8 +24,8 @@ Exit strategy that sets TP and SL as constant distances equal to the context spr
 
 ## Outputs
 
-- targets_long: np.ndarray of per-bar long-trade outcomes
-- targets_short: np.ndarray of per-bar short-trade outcomes
+- targets_long: np.ndarray of per-bar long-trade outcomes; 1.0 win, 0.0 loss/no win, NaN where the outcome is unknown (the TP/SL/timeout window runs past the end of the frame, and the last bar). Training drops NaN rows.
+- targets_short: np.ndarray of per-bar short-trade outcomes (same encoding)
 - durations_long, durations_short: np.ndarray durations returned only when return_durations=True
 - resolve_distances(df, tp, sl, ctx): tuple of two length-n arrays holding constant tp and sl distances
 
@@ -42,6 +42,7 @@ Exit strategy that sets TP and SL as constant distances equal to the context spr
 - AC-009: get_cache_key returns the string 'fixed_tp{int(tp)}_sl{int(sl)}_to{timeout_or_none}' where timeout_or_none is 'none' when timeout_bars is falsy.
 - AC-010: get_default_params returns {'tp': 30, 'sl': 20, 'timeout_bars': None}.
 - AC-011: When ctx.entry_modifier is a non-empty string, the registered entry modifier's compute_targets is invoked with full per-bar `tp_dist_arr`, `sl_dist_arr`, `trail_dist_arr`, and `trail_tp_dist_arr` arrays, plus named spread/slippage/max_bars/timeout_val arguments and trailing parameters from ctx.exit_modifier_params. Scale-in therefore receives arrays matching its contract rather than scalar distances.
+- AC-013: Labels whose window is cut by the end of the data are NaN (`nan_incomplete`); the fill follows `exit_params['entry_delay']` (default 1: next open, 0: signal bar close), the same reader the trade evaluator uses. This holds under an entry modifier too: the modifier is called with `nan_incomplete=True` and `entry_delay`.
 - AC-012: Under an entry modifier, ATR is sourced from df['_atr'] if present, else df['vol_atr'] if present, else computed via ta.volatility.average_true_range with window=14; NaNs in the ATR array are replaced with 0.0.
 
 ## Edge Cases

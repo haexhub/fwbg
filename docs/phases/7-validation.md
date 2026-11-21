@@ -43,6 +43,16 @@ Outer Fold (Walk-Forward):
 - **Inner Folds:** Grid search within each outer fold
 - The best grid candidate from the inner CV is evaluated on the outer test split
 
+**Inner CV models are smaller.** To keep the grid search affordable, the inner
+CV trains each model with reduced hyperparameters (`get_reduced_hyperparameters`
+of the model plugin): `xgboost` uses half of `n_estimators` (at least 10); models
+without their own reduction train identically. The combination and threshold
+are therefore chosen with a smaller model than the one trained on the outer
+fold and evaluated on its test split. Set `model.hyperparameters` for the full
+model; the reduction is applied on top of it and cannot be switched off. This
+also affects the inner/outer ratio of the bias check ("Bias Ratios"): the two
+sides are not the same model.
+
 ### Configuration
 
 | Parameter | Default | Description |
@@ -54,6 +64,23 @@ Outer Fold (Walk-Forward):
 | `sample_weights` | `false` | Trade-duration-based sample weights |
 | `probability_calibration` | `false` | Probability calibration of predictions |
 | `calibration_method` | `"isotonic"` | Calibration method ("isotonic" or "sigmoid") |
+
+### Run seed
+
+All randomness of a run (feature selectors such as Boruta and stability
+selection, the model's `random_state`, the Monte-Carlo permutation test and the
+terminal-equity bootstrap) is seeded. By default every component uses 42, as
+before. Set the optional top-level strategy key `seed` (integer >= 0) to use
+another seed for all of them; it overrides a `random_state` in
+`model.hyperparameters` and a selector's own `seed` parameter, which only apply
+while no strategy `seed` is set. The seed in effect is stored as `seed` in each
+symbol's result. Note that an explicit `"seed": 42` gives the same results as no
+seed but is a different configuration for the research register's fingerprint.
+The `adversarial_validation` indicator keeps its own fixed seed.
+
+```json
+{ "name": "my_strategy", "seed": 7 }
+```
 
 ### Time-Series Purging (Embargo)
 

@@ -1,8 +1,12 @@
 """Tests für die kausale Reporting-Kalibrierung (Plan: Look-Ahead-Fix)."""
+
 import pandas as pd
 import pytest
 
+import numpy as np
+
 from fwbg.optimization.causal_reporting import (
+    bootstrap_terminal_equity,
     circuit_breaker_mask,
     compute_causal_reporting,
     equity_replay,
@@ -10,10 +14,7 @@ from fwbg.optimization.causal_reporting import (
     sized_returns,
     slim_trades,
 )
-from fwbg.simulation.trade import (
-    monte_carlo_equity_from_returns,
-    monte_carlo_permutation_test,
-)
+from fwbg.simulation.trade import monte_carlo_permutation_test
 
 
 def _fold(binary_pnl):
@@ -123,22 +124,31 @@ class RrrRiskManager(StubRiskManager):
         return {**result, "risk_per_trade": 0.01 * rrr}
 
 
-class TestPerFoldRrr:
-    """Fold i is sized with the RRR of the setting it was replayed with."""
+class TestPayoffFromPriorTrades:
+    """Fold i is sized with the payoff the prior folds' trades realised."""
 
-    def test_each_fold_is_sized_with_its_own_rrr(self):
+    def test_payoff_is_the_prior_average_win_over_average_loss(self):
         folds = [
             {**_fold([(1.0, 0.003), (-1.0, -0.002)]), "rrr": 4.0},
             {**_fold([(1.0, 0.004)]), "rrr": 1.0},
             {**_fold([(-1.0, -0.001)]), "rrr": 3.0},
         ]
         out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
-        assert out["per_fold_risk"] == [None, pytest.approx(0.01), pytest.approx(0.03)]
+        # fold 1: 0.003 / 0.002; fold 2: mean(0.003, 0.004) / 0.002
+        assert out["per_fold_risk"] == [
+            None,
+            pytest.approx(0.015),
+            pytest.approx(0.0175),
+        ]
 
-    def test_folds_without_rrr_fall_back_to_the_given_rrr(self):
-        folds = [_fold([(1.0, 0.003), (-1.0, -0.002)]), _fold([(1.0, 0.004)])]
+    def test_fold_rrr_is_the_fallback_while_priors_lack_a_loss(self):
+        folds = [
+            _fold([(1.0, 0.003)]),
+            {**_fold([(1.0, 0.004)]), "rrr": 3.0},
+            _fold([]),
+        ]
         out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
-        assert out["per_fold_risk"] == [None, pytest.approx(0.02)]
+        assert out["per_fold_risk"] == [None, pytest.approx(0.03), pytest.approx(0.02)]
 
 
 class TestHindsightRemoval:
@@ -175,7 +185,10 @@ class TestSharedHelpers:
     """Helpers shared by process_symbol and the holdout look (extracted from process.py)."""
 
     def test_sized_returns_apply_the_circuit_breaker_and_prior_loss_scale(self):
-        trades = [{"result": r, "pnl_raw": p} for r, p in [(-1.0, -1.0), (-1.0, -2.0), (1.0, 4.0), (1.0, 5.0)]]
+        trades = [
+            {"result": r, "pnl_raw": p}
+            for r, p in [(-1.0, -1.0), (-1.0, -2.0), (1.0, 4.0), (1.0, 5.0)]
+        ]
         cb = {"enabled": True, "pause_after_losses": 2, "pause_bars": 1}
 
         returns, pnl, taken = sized_returns(trades, 0.02, cb, [-2.0, -4.0, 3.0])
@@ -200,7 +213,7 @@ class TestSharedHelpers:
         summary = monte_carlo_summary(pnl, returns)
 
         perm = monte_carlo_permutation_test(pnl, n_permutations=1000)
-        equity = monte_carlo_equity_from_returns(returns, n_simulations=500)
+        equity = bootstrap_terminal_equity(returns, n_simulations=500)
         assert summary == {
             "p_value": perm["p_value"],
             "is_significant": perm["is_significant"],
@@ -210,6 +223,53 @@ class TestSharedHelpers:
             "equity_p95": equity["p95_equity"],
             "bankruptcy_rate": equity["bankruptcy_rate"],
         }
+
+    def test_bootstrap_percentiles_differ_and_are_seeded(self):
+        """Permuting fixed returns ends at one equity (93.4684147 x3 in the old output);
+        a bootstrap gives a real spread, and the same seed the same numbers."""
+        returns = [0.03] * 12 + [-0.02] * 18 + [0.01] * 10
+        out = bootstrap_terminal_equity(returns, n_simulations=500, random_seed=7)
+        assert out["p5_equity"] < out["median_equity"] < out["p95_equity"]
+        assert out == bootstrap_terminal_equity(
+            returns, n_simulations=500, random_seed=7
+        )
+        assert out != bootstrap_terminal_equity(
+            returns, n_simulations=500, random_seed=8
+        )
+
+    def test_bootstrap_matches_a_reference_resampling(self):
+        """Pin the draws: moving-block size 1 is iid sampling with replacement."""
+        returns = np.array(
+            [0.02, -0.01, 0.03, -0.02, 0.01, 0.0, 0.04, -0.03, 0.02, 0.01]
+        )
+        out = bootstrap_terminal_equity(returns, n_simulations=200, random_seed=3)
+        rng = np.random.default_rng(3)
+        starts = rng.integers(0, len(returns), size=(200, len(returns)))
+        ref = 100.0 * np.prod(1.0 + returns[starts], axis=1)
+        assert out["median_equity"] == pytest.approx(float(np.median(ref)))
+        assert out["p5_equity"] == pytest.approx(float(np.percentile(ref, 5)))
+        assert out["p95_equity"] == pytest.approx(float(np.percentile(ref, 95)))
+        assert out["observed_equity"] == pytest.approx(
+            100.0 * float(np.prod(1.0 + returns))
+        )
+
+    def test_bootstrap_block_size_keeps_runs_together(self):
+        """A block of 5 on alternating-run data keeps resamples built of 5-long runs."""
+        returns = [0.05] * 5 + [-0.05] * 5 + [0.05] * 5 + [-0.05] * 5
+        out = bootstrap_terminal_equity(returns, n_simulations=100, block_size=5)
+        assert out["p5_equity"] < out["p95_equity"]
+
+    def test_bootstrap_counts_ruin(self):
+        returns = [-1.0] + [0.01] * 19
+        out = bootstrap_terminal_equity(returns, n_simulations=500)
+        assert out["bankruptcy_rate"] > 0.5
+        assert out["observed_equity"] == 0.0
+
+    def test_bootstrap_too_few_returns(self):
+        out = bootstrap_terminal_equity([0.1] * 5)
+        assert out["n_simulations"] == 0
+        assert out["median_equity"] == 100.0
+        assert out["observed_equity"] == pytest.approx(100 * 1.1**5)
 
     def test_equity_replay_thins_long_curves_and_keeps_the_last_point(self):
         times = [str(t) for t in pd.date_range("2024-01-01", periods=50, freq="h")]
@@ -221,7 +281,15 @@ class TestSharedHelpers:
         assert thin["equity_points"][-1] == full["equity_points"][-1]
 
     def test_slim_trades_keep_the_reported_fields(self):
-        trade = {"entry_time": "a", "exit_time": "b", "direction": "LONG", "result": 1.0,
-                 "pnl_raw": 2.0, "exit_reason": "tp", "mae": 0.5}
+        trade = {
+            "entry_time": "a",
+            "exit_time": "b",
+            "direction": "LONG",
+            "entry_price": 101.0,
+            "result": 1.0,
+            "pnl_raw": 2.0,
+            "exit_reason": "tp",
+            "mae": 0.5,
+        }
 
         assert slim_trades([trade]) == [{k: v for k, v in trade.items() if k != "mae"}]

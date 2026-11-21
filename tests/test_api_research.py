@@ -24,7 +24,12 @@ NEW = {
     "hypothesis": "Events continue.",
     "mechanism": "Order flow persists.",
 }
-VERDICT = {"status": "parked", "reason": "no edge yet", "reopen_if": "new data", "actor": "agent-7"}
+VERDICT = {
+    "status": "parked",
+    "reason": "no edge yet",
+    "reopen_if": "new data",
+    "actor": "agent-7",
+}
 
 
 @pytest.fixture
@@ -80,7 +85,9 @@ def git(register, *args) -> str:
 
 
 def test_post_registers_and_commits_a_card(client, register):
-    response = client.post("/api/research", json={**NEW, "criteria": {"min_sharpe": 1.5}})
+    response = client.post(
+        "/api/research", json={**NEW, "criteria": {"min_sharpe": 1.5}}
+    )
     assert response.status_code == 201
     card = response.json()["card"]
     assert card["id"] == "S-0001"
@@ -102,6 +109,24 @@ def test_post_takes_a_cutoff(client):
 def test_post_needs_a_hypothesis_and_mechanism(client, missing):
     response = client.post("/api/research", json={**NEW, missing: ""})
     assert response.status_code == 422
+
+
+def test_post_refuses_a_cutoff_that_shrinks_the_default_holdout(client, register):
+    latest = commands.months_before(date.today(), commands.DEFAULT_HOLDOUT_MONTHS)
+    for cutoff in (date.today(), date.fromordinal(latest.toordinal() + 1)):
+        response = client.post(
+            "/api/research", json={**NEW, "cutoff": cutoff.isoformat()}
+        )
+        assert response.status_code == 422, cutoff
+        assert "holdout must cover" in response.json()["detail"]
+    assert cards(client) == []
+
+
+def test_post_takes_the_default_cutoff_and_earlier_ones(client):
+    latest = commands.months_before(date.today(), commands.DEFAULT_HOLDOUT_MONTHS)
+    response = client.post("/api/research", json={**NEW, "cutoff": latest.isoformat()})
+    assert response.status_code == 201
+    assert response.json()["card"]["holdout_cutoff"] == latest.isoformat()
 
 
 @pytest.mark.parametrize(
@@ -152,7 +177,9 @@ def test_post_refuses_bad_input_with_422(client, register, change):
     assert not list((register / "strategies").glob("*.md"))
 
 
-def test_an_uncommitted_card_is_registered_with_a_warning(client, register, monkeypatch):
+def test_an_uncommitted_card_is_registered_with_a_warning(
+    client, register, monkeypatch
+):
     break_commits(monkeypatch)
     response = client.post("/api/research", json=NEW)
     assert response.status_code == 201
@@ -184,7 +211,8 @@ def test_list_counts_trials_and_live_runs(client, card_id, register, tmp_path):
         make_trial(strategy=card_id, metrics={"GOLD": {"sharpe": 0.8}}),
     )
     write_pending(
-        register, make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id)
+        register,
+        make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id),
     )
     [summary] = cards(client)
     assert summary["trials"] == 1
@@ -192,13 +220,17 @@ def test_list_counts_trials_and_live_runs(client, card_id, register, tmp_path):
     assert summary["running"] == 1
 
 
-def test_list_ranks_no_signal_evaluation_from_before_inner_selection(client, card_id, register):
+def test_list_ranks_no_signal_evaluation_from_before_inner_selection(
+    client, card_id, register
+):
     cfg = {"strategy": {"model": {"type": "signal"}}, "symbols": ["GOLD"]}
     store_config(register, digest(cfg), cfg)
     ledger = register / LEDGER_FILENAME
     append_trial(
         ledger,
-        make_trial(strategy=card_id, fingerprint=digest(cfg), metrics={"GOLD": {"sharpe": 2.0}}),
+        make_trial(
+            strategy=card_id, fingerprint=digest(cfg), metrics={"GOLD": {"sharpe": 2.0}}
+        ),
     )
     append_trial(ledger, make_trial(strategy=card_id, metrics={"DAX": {"sharpe": 0.5}}))
     [summary] = cards(client)
@@ -206,9 +238,13 @@ def test_list_ranks_no_signal_evaluation_from_before_inner_selection(client, car
 
 
 def test_list_filters_by_status_and_tag(client, card_id):
-    other = client.post("/api/research", json={**NEW, "title": "Other idea", "tags": ["other"]})
+    other = client.post(
+        "/api/research", json={**NEW, "title": "Other idea", "tags": ["other"]}
+    )
     assert other.status_code == 201
-    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    assert (
+        client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    )
     assert [c["id"] for c in cards(client, "?status=parked")] == [card_id]
     assert [c["id"] for c in cards(client, "?status=active")] == ["S-0002"]
     assert [c["id"] for c in cards(client, "?tag=other")] == ["S-0002"]
@@ -259,10 +295,13 @@ def test_detail_has_card_trials_pending_and_coverage(client, card_id):
 def test_detail_lists_trials_and_pending_runs(client, card_id, register, tmp_path):
     append_trial(register / LEDGER_FILENAME, make_trial(strategy=card_id))
     write_pending(
-        register, make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id)
+        register,
+        make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id),
     )
     detail = client.get(f"/api/research/{card_id}").json()
-    assert [(t["trial"], t["strategy"]) for t in detail["trials"]] == [("T-000001", card_id)]
+    assert [(t["trial"], t["strategy"]) for t in detail["trials"]] == [
+        ("T-000001", card_id)
+    ]
     assert detail["pending"] == ["run-2"]
 
 
@@ -277,10 +316,13 @@ def test_detail_survives_a_bad_pending_marker(client, card_id, register):
 def test_detail_names_criteria_problems(client, card_id, register):
     card = load_card(register, card_id)
     replace_card(
-        register, replace(card, success_criteria={**card.success_criteria, "min_sharpe": 0.1})
+        register,
+        replace(card, success_criteria={**card.success_criteria, "min_sharpe": 0.1}),
     )
     [problem] = client.get(f"/api/research/{card_id}").json()["criteria_problems"]
-    assert problem.startswith(f"success criteria of {card_id} differ from the registration")
+    assert problem.startswith(
+        f"success criteria of {card_id} differ from the registration"
+    )
 
 
 def test_detail_of_an_unknown_card_is_404(client, register):
@@ -322,7 +364,9 @@ def test_reopen_activates_the_card_and_records_the_actor(client, card_id, monkey
             return cls(2026, 10, 21)
 
     monkeypatch.setattr(research_api, "date", FixedDate)
-    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    assert (
+        client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    )
     response = client.post(
         f"/api/research/{card_id}/status",
         json={"status": "active", "reason": "new data", "actor": "agent-8"},
@@ -334,7 +378,9 @@ def test_reopen_activates_the_card_and_records_the_actor(client, card_id, monkey
 
 
 def test_reopen_refuses_a_reopen_condition(client, card_id):
-    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    assert (
+        client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    )
     response = client.post(
         f"/api/research/{card_id}/status",
         json={"status": "active", "reason": "new data", "actor": "a", "reopen_if": "x"},
@@ -344,12 +390,17 @@ def test_reopen_refuses_a_reopen_condition(client, card_id):
 
 
 def test_verdict_on_a_parked_card_is_409(client, card_id):
-    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    assert (
+        client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    )
     response = client.post(
         f"/api/research/{card_id}/status", json={**VERDICT, "status": "rejected"}
     )
     assert response.status_code == 409
-    assert response.json()["detail"] == f"{card_id} is parked; reopen it before a new verdict"
+    assert (
+        response.json()["detail"]
+        == f"{card_id} is parked; reopen it before a new verdict"
+    )
 
 
 @pytest.mark.parametrize("actor", [None, ""])
@@ -366,7 +417,8 @@ def test_a_status_change_of_an_unknown_card_is_404(client, register):
 
 def test_verdict_with_a_run_in_progress_is_409(client, card_id, register, tmp_path):
     write_pending(
-        register, make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id)
+        register,
+        make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id),
     )
     response = client.post(f"/api/research/{card_id}/status", json=VERDICT)
     assert response.status_code == 409
@@ -375,11 +427,15 @@ def test_verdict_with_a_run_in_progress_is_409(client, card_id, register, tmp_pa
 
 @pytest.mark.parametrize("field", ["reason", "actor", "reopen_if"])
 def test_a_multi_line_status_field_is_422(client, card_id, field):
-    response = client.post(f"/api/research/{card_id}/status", json={**VERDICT, field: "a\nb"})
+    response = client.post(
+        f"/api/research/{card_id}/status", json={**VERDICT, field: "a\nb"}
+    )
     assert response.status_code == 422
 
 
-def test_an_uncommitted_verdict_succeeds_with_a_warning(client, card_id, register, monkeypatch):
+def test_an_uncommitted_verdict_succeeds_with_a_warning(
+    client, card_id, register, monkeypatch
+):
     break_commits(monkeypatch)
     response = client.post(f"/api/research/{card_id}/status", json=VERDICT)
     assert response.status_code == 200
@@ -397,7 +453,9 @@ def test_startup_records_interrupted_runs(register, tmp_path, gate_on):
     """A run killed with the old container is recorded when the API starts again."""
     write_pending(register, make_pending(tmp_path / "run-1", pid=dead_pid()))
     create_app()
-    assert [trial.run_id for trial in read_trials(register / LEDGER_FILENAME)] == ["run-1"]
+    assert [trial.run_id for trial in read_trials(register / LEDGER_FILENAME)] == [
+        "run-1"
+    ]
     assert not (register / STAGING / "run-1.json").exists()
     assert git(register, "status", "--porcelain") == ""
 
@@ -421,3 +479,34 @@ def test_startup_without_a_register_creates_none(tmp_path, monkeypatch, gate_on)
     monkeypatch.setenv("FWBG_RESEARCH_DIR", str(tmp_path / "research"))
     create_app()
     assert not (tmp_path / "research").exists()
+
+
+def test_list_without_detail_carries_no_prose(client, card_id):
+    assert "hypothesis" not in cards(client)[0]
+
+
+def test_list_detail_open_card_has_prose_and_no_verdict(client, card_id):
+    entry = cards(client, "?detail=true")[0]
+    assert entry["hypothesis"] == "Events continue."
+    assert entry["mechanism"] == "Order flow persists."
+    assert entry["verdict"] is None
+
+
+def test_list_detail_shows_the_latest_verdict(client, card_id):
+    client.post(f"/api/research/{card_id}/status", json=VERDICT)
+    client.post(
+        f"/api/research/{card_id}/status",
+        json={"status": "active", "reason": "new data", "actor": "agent-7"},
+    )
+    assert cards(client, "?detail=true")[0]["verdict"] is None
+    client.post(
+        f"/api/research/{card_id}/status",
+        json={
+            **VERDICT,
+            "status": "rejected",
+            "reason": "still nothing",
+            "reopen_if": "other asset",
+        },
+    )
+    entry = cards(client, "?detail=true")[0]
+    assert entry["verdict"] == {"reason": "still nothing", "reopen_if": "other asset"}

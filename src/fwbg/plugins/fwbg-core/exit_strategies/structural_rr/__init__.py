@@ -13,6 +13,7 @@ TP = SL × r_multiple  (default: 2.0, i.e. 2R)
 The r_multiple is the primary optimization parameter and maps to `tp_value` in
 the grid system (set "tp": <value> in the exit strategy config params).
 """
+
 from typing import Tuple, TYPE_CHECKING
 
 import numpy as np
@@ -20,6 +21,7 @@ import pandas as pd
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import compute_targets_numba
+from fwbg.simulation.trade import resolve_entry_delay
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -105,9 +107,18 @@ class StructuralRRExitStrategy(BaseExitStrategy):
         timeout_val = timeout_bars if timeout_bars else 0
 
         result = compute_targets_numba(
-            opn_v, cls_v, hgh_v, low_v,
-            tp_dist_arr, sl_dist_arr, ctx.spread, slippage,
-            max_bars, timeout_val,
+            opn_v,
+            cls_v,
+            hgh_v,
+            low_v,
+            tp_dist_arr,
+            sl_dist_arr,
+            ctx.spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            nan_incomplete=True,
+            entry_delay=resolve_entry_delay(ctx.exit_params),
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)
