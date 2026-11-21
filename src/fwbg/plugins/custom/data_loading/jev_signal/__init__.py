@@ -43,7 +43,8 @@ class JevSignalLoader(BaseDataLoader):
             ctx.df[col] = shifted[col]
         return ctx
 
-    def get_default_params(self):
+    @classmethod
+    def get_default_params(cls) -> dict:
         """Select the official Jev cache when no provider is specified."""
         return {
             "provider": "jev_official",
