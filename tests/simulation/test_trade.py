@@ -13,7 +13,6 @@ Testet:
 import pytest
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
 
 from fwbg.simulation.numba_core import (
     _simulate_trade_numba,
