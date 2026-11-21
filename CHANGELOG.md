@@ -1,5 +1,103 @@
 # Changelog
 
+## [3.0.0](https://github.com/haexhub/fwbg/compare/v2.21.0...v3.0.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* `fwbg-premium` is no longer installed with fwbg or the Docker image. Strategies that use its plugins (the `fwbg-premium:*` namespace, e.g. regime indicators, macro data, atr_based/orb_based exit strategies, feature selection) fail until the package is installed separately into the same environment.
+
+### Features
+
+* **api:** Exit-Analyse über das Research-Register gaten ([4f04030](https://github.com/haexhub/fwbg/commit/4f0403055a24a2bcf52048be75343249e3125084))
+* **api:** gate POST /api/exploration/exit-optimization through the research register ([42e3a5d](https://github.com/haexhub/fwbg/commit/42e3a5de117135cc74b8b18821cba2564bc06857))
+* **data:** build session bars from intraday bars (fwbg data session-bars) ([522cd06](https://github.com/haexhub/fwbg/commit/522cd06f3c329fb2b99b9fe8da02426c9de056ab))
+* **data:** Handelszeiten pro Asset und Datenchecks vor jedem Lauf ([dc0d9e9](https://github.com/haexhub/fwbg/commit/dc0d9e9ecb73239af2529d412b2016a0159c7d1c))
+* **data:** Session-Bars aus Intraday-Bars bauen (fwbg data session-bars) ([4a22e88](https://github.com/haexhub/fwbg/commit/4a22e8862f95fcb57df0867c2fbb9fa13cd8ba79))
+* **data:** trading hours per asset and data checks before every run ([cd44271](https://github.com/haexhub/fwbg/commit/cd44271c6c528fa8af998d158ba035f81364276c))
+* **indicators:** pullback_momentum depth_reference for the impulse top ([e12bdd5](https://github.com/haexhub/fwbg/commit/e12bdd502c4cbb6bfbd3ff70962a8ab147c608b4))
+* **indicators:** pullback_momentum depth_reference for the impulse top ([5b49355](https://github.com/haexhub/fwbg/commit/5b49355726d562fbb269adf5ab8e61295d81f74f))
+* **ops:** unprivileged container, optional run seed and docs ([#243](https://github.com/haexhub/fwbg/issues/243)) ([b9d17c8](https://github.com/haexhub/fwbg/commit/b9d17c8e8e84c9ccc2b4a1674ee07cfc0ba47c13))
+* **optimization:** fwbg combine, gated portfolio runs over frozen sleeves ([04aa05e](https://github.com/haexhub/fwbg/commit/04aa05e989ccd448b3ecc1b71a2fe660a4259396))
+* **optimization:** fwbg combine, gated portfolio runs over frozen sleeves ([de001c5](https://github.com/haexhub/fwbg/commit/de001c5ad45ddfb5678230376e80a77dd7fe5c97))
+* Overnight-Finanzierung im Simulator und ibs-Indikator ([c40c06c](https://github.com/haexhub/fwbg/commit/c40c06c853b81dee4745ac33f93885c7dfab7663))
+* **plugins:** add gotobi indicator ([#209](https://github.com/haexhub/fwbg/issues/209)) ([cafabc3](https://github.com/haexhub/fwbg/commit/cafabc3f2d449d9a8c41631650f271e379a188d1))
+* **plugins:** add ibs indicator ([1266b93](https://github.com/haexhub/fwbg/commit/1266b934092c4587547fc905f88c76d96f2d444e))
+* **plugins:** add rebalancing_pressure indicator ([8162987](https://github.com/haexhub/fwbg/commit/8162987aafb3bb09d0ab9a3c26efc230aa24eeb3))
+* **plugins:** add rebalancing_pressure indicator ([413b310](https://github.com/haexhub/fwbg/commit/413b3102e7289d31cd3e0b719e6ee88038b33904))
+* **plugins:** add scheduled_events indicator ([c881565](https://github.com/haexhub/fwbg/commit/c8815654615b405310c744ddc3d1a6e7b2fe7fc2))
+* **plugins:** add scheduled_events indicator ([6180c83](https://github.com/haexhub/fwbg/commit/6180c8397efb3cbbc7ff61393ddde9b2c5454a95))
+* **plugins:** add turn_of_month indicator ([#208](https://github.com/haexhub/fwbg/issues/208)) ([ea78c01](https://github.com/haexhub/fwbg/commit/ea78c0131f603bcf3365bcd21289a53fe1f57b92))
+* **plugins:** add zscore indicator ([74d97ce](https://github.com/haexhub/fwbg/commit/74d97ceae0f85bfdf67e3985afc2087d0cf2337a))
+* **plugins:** volatility bars_per_day for realised volatility ([4a4bf0a](https://github.com/haexhub/fwbg/commit/4a4bf0ac64bb4e15ed5aebe63bf8649faef3d2d7))
+* **plugins:** zscore entry_z mit lookback-unabhängigen Signalspalten ([e3393b6](https://github.com/haexhub/fwbg/commit/e3393b64ee5092e123872d0a9e47bdbe11b39b12))
+* **plugins:** zscore entry_z threshold with lookback-free signal columns ([1487fcf](https://github.com/haexhub/fwbg/commit/1487fcf0c2959c996c87a87c728c16a9776e120b))
+* **plugins:** zscore-Indikator für Mean-Reversion-Regeln ([b45fcc4](https://github.com/haexhub/fwbg/commit/b45fcc418959be5c04bbd3085a4834b32efeb892))
+* **portfolio:** add monthly macro overlays to the portfolio backtest ([52bcd38](https://github.com/haexhub/fwbg/commit/52bcd380e29748b1574ed6563914ef91a1289c4b))
+* **portfolio:** add monthly macro overlays to the portfolio backtest ([46b747a](https://github.com/haexhub/fwbg/commit/46b747aa035e7c4c928162d1913632baea17732e))
+* Regel-Exits über Strategie-Spalten, noise_boundary-Indikator und signal_exit ([#198](https://github.com/haexhub/fwbg/issues/198)) ([15d6318](https://github.com/haexhub/fwbg/commit/15d6318f62fcaf470560414f8218c5304c370dbc))
+* **research:** add timing helpers for study scripts and document the study-script rules ([f0c6fda](https://github.com/haexhub/fwbg/commit/f0c6fdae9227adc67291655707845447ab9554b8))
+* **research:** allow reopening a candidate card ([a04049d](https://github.com/haexhub/fwbg/commit/a04049d0b86acfac7194c97a878022a5121b370a))
+* **research:** allow reopening a candidate card ([f0766ea](https://github.com/haexhub/fwbg/commit/f0766ea5b64dcfb632132333990f0c4f521b0b49))
+* **research:** allow study scripts to record the holdout look ([62fb3c9](https://github.com/haexhub/fwbg/commit/62fb3c92538ef29d39f0006c0ea3a2f41b09ccf6))
+* **research:** allow study scripts to record the holdout look ([5eb8db0](https://github.com/haexhub/fwbg/commit/5eb8db0bd8729fd1f04ae9bdf2e412a6b9f6891b))
+* **research:** list endpoint returns hypothesis, mechanism and verdict with detail=true ([#194](https://github.com/haexhub/fwbg/issues/194)) ([7921794](https://github.com/haexhub/fwbg/commit/7921794f070e29a73c4c2b4987db2932b67897fa))
+* **research:** timing helpers and study-script rules for all agents ([8c5a347](https://github.com/haexhub/fwbg/commit/8c5a3472eb268a998053d0d230f01aa2fe55ea16))
+* **signals:** filters.entry_hours – Einstiege nur in einer Session (lokale Zeit) ([74737ea](https://github.com/haexhub/fwbg/commit/74737ea04d8fcced9eea3ddd8706722ce5ea7578))
+* **signals:** filters.entry_hours restricts entries to a session in local time ([0235066](https://github.com/haexhub/fwbg/commit/0235066a1e4d0226187aa65e84c601b9d67c5444))
+* **simulation:** charge overnight financing per night held ([d328aca](https://github.com/haexhub/fwbg/commit/d328aca94ddd4c8a0cefd6d16dd3a6438f894584))
+
+
+### Bug Fixes
+
+* **broker-ig:** session renewal, order outcomes and position sizing ([#237](https://github.com/haexhub/fwbg/issues/237)) ([6618285](https://github.com/haexhub/fwbg/commit/66182857cd829af4cf4ea0dd9bd5e2bbb2ee33ef))
+* **config:** reject removed strategy keys and warn on ignored ones ([e4f5664](https://github.com/haexhub/fwbg/commit/e4f5664472f278033312859e327352c91cf3fa91))
+* **config:** reject removed strategy keys and warn on ignored ones ([30eb53e](https://github.com/haexhub/fwbg/commit/30eb53eeaffbe33e1b0054cefea5e0c3ba78da83))
+* **data:** align daily series to the last close before the bar date ([e09d157](https://github.com/haexhub/fwbg/commit/e09d15733e0463a7b59d67bea23886bb1f721b33))
+* **data:** align daily series to the last close before the bar date ([04cbe08](https://github.com/haexhub/fwbg/commit/04cbe0896165a07e18ea51c8e09c40c6d9f99808))
+* **data:** apply release-date contract to OECD monthly yields ([25bbdb8](https://github.com/haexhub/fwbg/commit/25bbdb82af3bf0f3bb6c936bfac194355d16a4c7))
+* **data:** apply release-date contract to OECD monthly yields ([dadb5d0](https://github.com/haexhub/fwbg/commit/dadb5d07ad4bec4a37af6a41d861f952f7321545))
+* **data:** clean macro series before as-of lookup ([f436897](https://github.com/haexhub/fwbg/commit/f436897ac91cb699c6039b9d0510af5e7eb726b1))
+* **data:** preserve data check reports through loading and holdout ([a0785da](https://github.com/haexhub/fwbg/commit/a0785da74cad84cb2fe4296fc0ae058910eccbee))
+* **data:** UTC timestamps, atomic writes, cache keys and error handling ([#236](https://github.com/haexhub/fwbg/issues/236)) ([9998471](https://github.com/haexhub/fwbg/commit/9998471aaf7734b4d237e0797394cf0f58f18965))
+* findings from a code review across simulation, optimization, API and bot ([#195](https://github.com/haexhub/fwbg/issues/195)) ([5c056c7](https://github.com/haexhub/fwbg/commit/5c056c7408284583b98cf709d4c142c446aa9432))
+* **indicators:** calendar features describe the bar's own timestamp ([#232](https://github.com/haexhub/fwbg/issues/232)) ([33be6ae](https://github.com/haexhub/fwbg/commit/33be6ae77efbe6005a396559b3c29c0249c6bdb6))
+* **indicators:** chart shift, shared Wilder ATR/RSI and session time zone follow-ups ([#242](https://github.com/haexhub/fwbg/issues/242)) ([ba4906b](https://github.com/haexhub/fwbg/commit/ba4906b06866b82c934a20166448898ee4a8fb56))
+* **indicators:** correct volatility, VWAP band and Wilder RSI ([#231](https://github.com/haexhub/fwbg/issues/231)) ([393239c](https://github.com/haexhub/fwbg/commit/393239c51eaba20e3b2a23f212df2d13324c47c4))
+* **indicators:** NaN warm-up and raw-price computation for trend indicators ([#230](https://github.com/haexhub/fwbg/issues/230)) ([1758bb3](https://github.com/haexhub/fwbg/commit/1758bb3f11829260a007fc629242102f13b5dfc5))
+* **indicators:** opening range sessions by time with DST handling ([#229](https://github.com/haexhub/fwbg/issues/229)) ([eb9c26a](https://github.com/haexhub/fwbg/commit/eb9c26a12fc8bac8030b931e8bc01d2bc9db7f7d))
+* **indicators:** remove lookahead from level indicators and retest signals ([#227](https://github.com/haexhub/fwbg/issues/227)) ([259708f](https://github.com/haexhub/fwbg/commit/259708fcd19d14df969ed5b7608bec7d3ecb5d44))
+* **indicators:** SMC and statistical/ML indicator corrections ([#233](https://github.com/haexhub/fwbg/issues/233)) ([dd6ae40](https://github.com/haexhub/fwbg/commit/dd6ae4030992e713a56410ee7899d443bb68b769))
+* **indicators:** validate custom signal output names and propagate NaN inputs ([#234](https://github.com/haexhub/fwbg/issues/234)) ([89ba556](https://github.com/haexhub/fwbg/commit/89ba55638f1311c9bdba15b85619d3b2d418fa96))
+* **optimization:** correct DSR, bootstrap, annualisation and inner CV scoring ([#235](https://github.com/haexhub/fwbg/issues/235)) ([2831452](https://github.com/haexhub/fwbg/commit/28314525c53fca82ad5e9c67f6a3ba372c49b882))
+* **optimization:** handle symbols without trades ([#217](https://github.com/haexhub/fwbg/issues/217)) ([78b6f3d](https://github.com/haexhub/fwbg/commit/78b6f3dde2c3d948134401131e4805110cbd0cd4))
+* **optimization:** keep trades and frozen setting of no_edge sleeves ([15222b9](https://github.com/haexhub/fwbg/commit/15222b964e8a520cf5a73aaf5e2981dce3f508d3))
+* **optimization:** keep trades and frozen setting of no_edge sleeves ([4c4bccd](https://github.com/haexhub/fwbg/commit/4c4bccde4317b7cbc70295dcee0ba4e7958e69ab))
+* **optimization:** keep unshifted signal columns out of the ML feature pool ([#240](https://github.com/haexhub/fwbg/issues/240)) ([5620bc5](https://github.com/haexhub/fwbg/commit/5620bc50b999d2fbc9c45edcfe99cd5d63453102))
+* **optimization:** match asset filters against whole symbols ([#218](https://github.com/haexhub/fwbg/issues/218)) ([a61350a](https://github.com/haexhub/fwbg/commit/a61350a3b894aa9301cc7297562f77c610cabc14))
+* **plugins:** handle closed-day event date edges ([7954add](https://github.com/haexhub/fwbg/commit/7954addd413cedbb696e103e83293a378edf8a9b))
+* **plugins:** include next trading day for month-end events ([584df04](https://github.com/haexhub/fwbg/commit/584df040fca9952d75e95df454838a9f665c4431))
+* **plugins:** Realisierte Volatilität für Tages- und Session-Bars (bars_per_day) ([1d13766](https://github.com/haexhub/fwbg/commit/1d13766acbd21e25b15d590c7649716c635b88a1))
+* **plugins:** skip rebalancing signals on weekends ([2c9d869](https://github.com/haexhub/fwbg/commit/2c9d869487d9e4054ad07e4cd319b4b2fd83da5b))
+* **plugins:** validate bars per day input ([0e58a32](https://github.com/haexhub/fwbg/commit/0e58a32062133882a129e23a88f2b94e7a77c511))
+* **portfolio:** address review findings on the macro overlay ([38128c8](https://github.com/haexhub/fwbg/commit/38128c83d84878162720d29201a59634ca519f53))
+* **research:** keep the carried position at the start of a truncated window ([317f359](https://github.com/haexhub/fwbg/commit/317f359cf8aeb21241339039ebe81d10bfadf6d3))
+* **security:** harden API, compose and workflows, close research gate bypasses ([#228](https://github.com/haexhub/fwbg/issues/228)) ([66fdd05](https://github.com/haexhub/fwbg/commit/66fdd0579447d3c052604303cc0f25de61a1c5b0))
+* **simulation:** align labels, simulation and evaluator ([#239](https://github.com/haexhub/fwbg/issues/239)) ([51b2bb3](https://github.com/haexhub/fwbg/commit/51b2bb3eb6479d28a08ec5ed1542d28e1f1256ad))
+* **simulation:** charge financing per scale-in fill ([70d56fa](https://github.com/haexhub/fwbg/commit/70d56fa2ff7ad129b5c52a96ef0a8300738c7477))
+* **simulation:** labels honour entry_delay and leave open windows unknown ([#241](https://github.com/haexhub/fwbg/issues/241)) ([a3a1396](https://github.com/haexhub/fwbg/commit/a3a13963811316a79de63de57888af4f5799ff2c))
+
+
+### Documentation
+
+* **data:** correct OECD macro fetch descriptions ([bc6ea9a](https://github.com/haexhub/fwbg/commit/bc6ea9acc4deefa5e11dedda46fab4ac75e48777))
+* **research:** name candidate in the reopen help text ([9a0e03d](https://github.com/haexhub/fwbg/commit/9a0e03de78294b5b1b0c009129b030ff286c6bcd))
+
+
+### Code Refactoring
+
+* remove bundled fwbg-premium package ([#238](https://github.com/haexhub/fwbg/issues/238)) ([81e2a6a](https://github.com/haexhub/fwbg/commit/81e2a6a1cdc41d09b3e1e9950edfbd6ede5cebcc))
+
 ## [2.21.0](https://github.com/haexhub/fwbg/compare/v2.20.4...v2.21.0) (2026-10-23)
 
 
