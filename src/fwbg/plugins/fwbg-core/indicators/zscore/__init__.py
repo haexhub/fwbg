@@ -117,6 +117,23 @@ class ZscoreIndicator(BaseIndicator):
     def get_signal_columns(self, params: Optional[dict] = None) -> List[str]:
         return self.get_feature_columns(params)
 
+    def get_continuous_signal_columns(self, params: Optional[dict] = None) -> List[str]:
+        return [
+            col
+            for col in self.get_feature_columns(params)
+            if col.startswith("zscore_")
+            and not col.endswith(
+                (
+                    "_above_mean",
+                    "_below_mean",
+                    "_entry_long",
+                    "_entry_short",
+                    "_exit_long",
+                    "_exit_short",
+                )
+            )
+        ]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {"lookbacks": [20], "use_log": True, "entry_z": None}

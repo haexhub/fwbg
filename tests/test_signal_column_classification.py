@@ -101,7 +101,10 @@ def probe(name: str) -> dict:
     for row in ROWS:
         for move in (60.0, -60.0):
             moved = df.copy()
-            for col in ("O", "H", "L", "C"):
+            # Current-bar open-only inputs are already known when the bar starts
+            # (for example, session bands anchored on today's open). This probe
+            # detects decisions that depend on intrabar or closing prices.
+            for col in ("H", "L", "C"):
                 moved.iloc[row, moved.columns.get_loc(col)] += move
             out = plugin.compute(moved, **params)
             for col in new:
@@ -112,6 +115,9 @@ def probe(name: str) -> dict:
         "produced": set(base.columns),
         "own_bar": own_bar,
         "signals": column_method(plugin, "get_signal_columns", params),
+        "continuous_signals": column_method(
+            plugin, "get_continuous_signal_columns", params
+        ),
         "calendar": column_method(plugin, "get_calendar_columns", params),
     }
 
@@ -121,6 +127,26 @@ def test_declared_columns_are_produced(name):
     found = probe(name)
     missing = [c for c in found["signals"] if c not in found["produced"]]
     assert not missing, f"{name} declares signal columns it does not produce: {missing}"
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_continuous_signal_columns_are_signals(name):
+    found = probe(name)
+    assert set(found["continuous_signals"]) <= set(found["signals"])
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("ibs", {"ibs"}),
+        ("zscore", {"zscore_20"}),
+        ("noise_boundary", {"nb_vwap"}),
+    ],
+)
+def test_continuous_signal_columns_are_declared(name, expected):
+    params = {**INDICATOR_REGISTRY[name].get_default_params(), **PARAMS.get(name, {})}
+    plugin = INDICATOR_REGISTRY[name]()
+    assert set(plugin.get_continuous_signal_columns(params)) == expected
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -197,7 +223,7 @@ def test_shifted_indicators_declare_no_signal_columns(name):
         ("zscore", {"zscore_20", "zscore_20_above_mean", "zscore_20_below_mean"}),
         (
             "noise_boundary",
-            {"nb_upper", "nb_lower", "nb_vwap", "nb_long", "nb_short", "nb_exit_long", "nb_exit_short"},
+            {"nb_vwap", "nb_long", "nb_short", "nb_exit_long", "nb_exit_short"},
         ),
     ],
 )  # fmt: skip

@@ -74,6 +74,24 @@ def test_supertrend_overlay_sits_on_the_bar_that_produced_it(ohlc, client):
     assert np.isnan(drawn.iloc[-1])
 
 
+def test_chart_response_declares_continuous_and_discrete_signal_columns(ohlc, client):
+    resp = client.post(
+        "/api/chart/indicator",
+        json={
+            "fqn": "fwbg-core:ibs",
+            "source": "test_src",
+            "symbol": "EURUSD",
+            "timeframe": "HOUR_1",
+            "params": {},
+            "limit": 1000,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["signal_columns"] == ["ibs", "ibs_down", "ibs_above_prev_high"]
+    assert body["discrete_signal_columns"] == ["ibs_down", "ibs_above_prev_high"]
+
+
 def test_mtf_overlay_shows_the_previous_finished_candle(ohlc, tmp_path, client):
     """With an indicator timeframe the level of a finished day is held across
     the NEXT day's chart bars, never across the day that produced it."""
