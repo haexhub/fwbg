@@ -376,6 +376,21 @@ def _financing_pct(value: Any) -> float:
     return pct
 
 
+# Seed of every seeded component of a run when the strategy sets no ``seed``:
+# feature selectors, model random_state, the Monte-Carlo permutation and the
+# terminal-equity bootstrap all use 42, as they did before the seed was configurable.
+DEFAULT_RUN_SEED = 42
+
+
+def _run_seed(value: Any) -> Optional[int]:
+    """The strategy's ``seed``: None (use the built-in seeds) or an int >= 0."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"seed must be an integer >= 0, not {value!r}")
+    return value
+
+
 DATA_CHECK_MODES = ("strict", "warn", "off")
 
 
@@ -454,6 +469,11 @@ class StrategyConfig:
     # a data error, "warn" only logs it, "off" skips the checks and keeps filler bars.
     data_checks: str = "strict"
 
+    # Run seed (int >= 0). None keeps the built-in seed (DEFAULT_RUN_SEED, 42) for
+    # every seeded component, and a model's own random_state or a selector's own
+    # seed parameter still wins. A set value feeds all of them and overrides those.
+    seed: Optional[int] = None
+
     # Signal rules for composed entry signals (visual rule builder)
     signal_rules: Optional[Dict[str, Any]] = None
 
@@ -464,6 +484,12 @@ class StrategyConfig:
     def __post_init__(self) -> None:
         self.financing_pct = _financing_pct(self.financing_pct)
         self.data_checks = _data_checks(self.data_checks)
+        self.seed = _run_seed(self.seed)
+
+    @property
+    def run_seed(self) -> int:
+        """The seed in effect: ``seed``, or DEFAULT_RUN_SEED when none is set."""
+        return DEFAULT_RUN_SEED if self.seed is None else self.seed
 
     # Top-level keys from_dict reads; underscore keys are free-form metadata.
     KNOWN_KEYS = frozenset(
@@ -490,6 +516,7 @@ class StrategyConfig:
             "cost_multiplier",
             "financing_pct",
             "data_checks",
+            "seed",
             "signal_rules",
             "hypothesis",
             "expected_outcome",
@@ -591,6 +618,7 @@ class StrategyConfig:
             cost_multiplier=data.get("cost_multiplier", 1.0),
             financing_pct=_financing_pct(data.get("financing_pct", 0.0)),
             data_checks=_data_checks(data.get("data_checks", "strict")),
+            seed=_run_seed(data.get("seed")),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             signal_rules=data.get("signal_rules"),
@@ -695,6 +723,7 @@ class StrategyConfig:
             "hypothesis": self.hypothesis,
             "expected_outcome": self.expected_outcome,
             **({"signal_rules": self.signal_rules} if self.signal_rules else {}),
+            **({"seed": self.seed} if self.seed is not None else {}),
         }
 
     def log_summary(self, log_func=print):

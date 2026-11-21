@@ -153,7 +153,9 @@ def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dic
     fold, evaluation, embargo = run
     holdout = _look(fold, evaluation, strategy.holdout_cutoff, embargo)
     try:
-        return _holdout_result(development, evaluation, fold, holdout)
+        return _holdout_result(
+            development, evaluation, fold, holdout, strategy.run_seed
+        )
     except Exception as exc:  # the holdout trades exist: the data was looked at
         return _failed(development, holdout, exc)
 
@@ -264,7 +266,11 @@ def _look(
 
 
 def _holdout_result(
-    development: dict, evaluation: dict, fold: WalkForwardFold, holdout: dict
+    development: dict,
+    evaluation: dict,
+    fold: WalkForwardFold,
+    holdout: dict,
+    seed: int,
 ) -> dict:
     sym = development["symbol"]
     config = development["config"]
@@ -290,7 +296,7 @@ def _holdout_result(
             "development": development_summary(development),
         }
 
-    mc = monte_carlo_summary(pnl, returns)
+    mc = monte_carlo_summary(pnl, returns, seed=seed)
     sharpe = calculate_sharpe_ratio(
         returns, trades_per_year=len(pnl) / years if years > 0 else len(pnl)
     )

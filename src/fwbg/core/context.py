@@ -11,6 +11,7 @@ from typing import List, Optional, TYPE_CHECKING
 from fwbg.data.trading_hours import TradingHours, resolve_entry_hours
 
 from .columns import EXIT_COLUMN_PARAMS
+from .config import DEFAULT_RUN_SEED
 
 if TYPE_CHECKING:
     from .config import StrategyConfig, RegimeFilterGridConfig, ExitStrategyConfig
@@ -109,6 +110,11 @@ class SimulationContext:
     calibration_method: str = "isotonic"
     meta_labeling: bool = False
 
+    # Run seed from StrategyConfig.seed. None = the built-in seeds (42), where a
+    # model's own random_state or a selector's own seed parameter still wins; a
+    # set value feeds every seeded component and overrides those.
+    seed: Optional[int] = None
+
     # Model Hyperparameters (from StrategyConfig, merged with per-asset grid overrides)
     model_hyperparameters: dict = field(default_factory=dict)
 
@@ -153,6 +159,11 @@ class SimulationContext:
 
     # Preprocessing (from Pipeline)
     preprocessing_plugins: List[dict] = None  # List of {"name": ..., "params": ...}
+
+    @property
+    def run_seed(self) -> int:
+        """The seed in effect: ``seed``, or DEFAULT_RUN_SEED when none is set."""
+        return DEFAULT_RUN_SEED if self.seed is None else self.seed
 
     @classmethod
     def create(
@@ -238,6 +249,7 @@ class SimulationContext:
             probability_calibration=strategy.validation.probability_calibration,
             calibration_method=strategy.validation.calibration_method,
             meta_labeling=strategy.validation.meta_labeling,
+            seed=strategy.seed,
         )
 
     def total_grid_combinations(self) -> int:
