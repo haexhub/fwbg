@@ -113,7 +113,7 @@ class TestPluginDispatchConsistency:
 
         assert len(targets_l) == len(df)
         assert len(targets_s) == len(df)
-        assert targets_l.sum() + targets_s.sum() > 0, (
+        assert np.nansum(targets_l) + np.nansum(targets_s) > 0, (
             "Fixed-Targets sollten bei volatilen Daten Wins produzieren"
         )
 
@@ -128,7 +128,9 @@ class TestPluginDispatchConsistency:
         far_l, far_s, _, _ = compute_targets(df, tp=200, sl=40, ctx=ctx)
 
         # A nearby TP is hit far more often than a TP of 200 spreads.
-        assert near_l.sum() + near_s.sum() > far_l.sum() + far_s.sum()
+        assert np.nansum(near_l) + np.nansum(near_s) > np.nansum(far_l) + np.nansum(
+            far_s
+        )
 
     def test_simulate_trades_uses_plugin_distances(self):
         """_simulate_trades_core muss Plugin-Distanzen verwenden.
