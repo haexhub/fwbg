@@ -19,7 +19,7 @@ Rule-based exits for strategies whose exit is a condition rather than a price le
 
 - `exit_signal_long_column` (str): column whose value 1 closes an open long
 - `exit_signal_short_column` (str): column whose value 1 closes an open short
-- `entry_delay` (int, default=0): 0 = enter at the signal bar's close
+- `entry_delay` (int, default=1): 1 = enter at the next bar's open, the same default the trade simulation uses when exit params leave it out; 0 = enter at the signal bar's close
 
 ## Outputs
 

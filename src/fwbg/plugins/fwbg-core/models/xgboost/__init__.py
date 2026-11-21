@@ -1,9 +1,10 @@
 """XGBoost model plugin for FWBG."""
+
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional
 
-from fwbg_sdk.models import BaseModel, TrainingContext
+from fwbg_sdk.models import BaseModel, TrainingContext, UntrainableLabelsError
 from fwbg_sdk.registry import register_model
 
 
@@ -29,6 +30,12 @@ class XGBoostModel(BaseModel):
         from xgboost import XGBClassifier
         from fwbg.utils.xgb_config import get_xgboost_params, get_xgboost_n_jobs
 
+        if len(np.unique(targets)) < 2:
+            # The logistic loss has no base score for a constant label.
+            raise UntrainableLabelsError(
+                f"xgboost needs both classes in the labels, got {np.unique(targets).tolist()}"
+            )
+
         self.progress.begin_training()
 
         # Stage: prepare_parameters
@@ -52,7 +59,11 @@ class XGBoostModel(BaseModel):
             self.progress.complete_stage("fitting")
         except Exception as error:
             error_message = str(error).lower()
-            if "cuda" in error_message or "gpu" in error_message or "device" in error_message:
+            if (
+                "cuda" in error_message
+                or "gpu" in error_message
+                or "device" in error_message
+            ):
                 self._handle_gpu_fallback(features, targets, params, fit_kwargs)
             else:
                 self.logger.error(f"Training failed: {error}")
@@ -80,7 +91,8 @@ class XGBoostModel(BaseModel):
         self.logger.warning("CUDA error — falling back to CPU")
         disable_gpu()
         cpu_params = {
-            k: v for k, v in original_params.items()
+            k: v
+            for k, v in original_params.items()
             if k not in ("device", "tree_method")
         }
         cpu_params["tree_method"] = "hist"

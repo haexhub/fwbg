@@ -15,7 +15,11 @@ from fwbg.core.columns import ColumnRoleError, resolve_role_column
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
 from fwbg.pipeline.features import REGIME_LONG, REGIME_SHORT
-from fwbg.simulation.trade import simulate_pro_trade, compute_session_mask
+from fwbg.simulation.trade import (
+    simulate_pro_trade,
+    compute_session_mask,
+    resolve_entry_delay,
+)
 
 
 def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationContext):
@@ -62,6 +66,31 @@ def resolve_trailing_params(
     return float(be), float(trail_mult), int(pips)
 
 
+def resolve_breakeven_offset(
+    ctx: SimulationContext,
+    exit_params: Optional[dict] = None,
+    strategy: Optional[str] = None,
+) -> float:
+    """Fraction of the TP distance the breakeven stop sits beyond the entry.
+
+    ``orb_based`` reads ``breakeven_offset`` from ``exit_params`` (default 0.0,
+    exactly the entry); an attached exit modifier may override it in its params.
+    Other strategies have no offset.  Counterpart of ``resolve_trailing_params``
+    for the training labels and the trade evaluator.
+    """
+    if exit_params is None:
+        exit_params = ctx.exit_params or {}
+    if strategy is None:
+        strategy = getattr(ctx, "exit_strategy", None)
+    if strategy != "orb_based":
+        return 0.0
+    offset = exit_params.get("breakeven_offset", 0.0)
+    if getattr(ctx, "exit_modifier", None):
+        modifier = getattr(ctx, "exit_modifier_params", None) or {}
+        offset = modifier.get("breakeven_offset", offset)
+    return float(offset)
+
+
 def _compute_signal_events(
     probs: Optional[np.ndarray], win_idx: Optional[int], ct: float
 ) -> Optional[np.ndarray]:
@@ -90,6 +119,22 @@ def _compute_signal_events(
     return events
 
 
+def labelled_rows(targets: np.ndarray) -> np.ndarray:
+    """Mask of the rows whose label is known (not NaN).
+
+    A label window that runs past the end of the data has no outcome yet; the
+    label kernels mark it NaN (``nan_incomplete``).  Such rows are not training
+    examples: fitting and scoring drop them instead of reading them as losses.
+    """
+    return ~np.isnan(np.asarray(targets, dtype=np.float64))
+
+
+def count_positive_labels(targets: np.ndarray) -> int:
+    """Number of non-zero labels among the known ones (NaN is not a win)."""
+    targets = np.asarray(targets)
+    return int(np.count_nonzero(targets[labelled_rows(targets)]))
+
+
 def _validate_targets(
     targets_long: np.ndarray, targets_short: np.ndarray, ctx: SimulationContext
 ) -> Tuple[bool, bool]:
@@ -105,8 +150,8 @@ def _validate_targets(
         (has_long, has_short) - Boolean Tuple
     """
     min_per_direction = ctx.min_trades // 2
-    n_long = np.count_nonzero(targets_long)
-    n_short = np.count_nonzero(targets_short)
+    n_long = count_positive_labels(targets_long)
+    n_short = count_positive_labels(targets_short)
     has_long = ctx.long_enabled and n_long >= min_per_direction
     has_short = ctx.short_enabled and n_short >= min_per_direction
     return has_long, has_short
@@ -252,6 +297,11 @@ def simulate_trades(
         tp_dists = per_trade_params[:, 0].copy()
         sl_dists = per_trade_params[:, 1].copy()
 
+    # A bar whose TP or SL distance cannot be computed (NaN, e.g. while the ATR
+    # behind a model's per-trade distances warms up) is not tradable: such a
+    # signal opens no trade, and no NaN level ever reaches the simulator.
+    tradable = np.isfinite(tp_dists) & np.isfinite(sl_dists)
+
     # Absolute SL levels: when sl_level is set in exit_params, SL is
     # anchored to the structural price level from that column (e.g. OR midpoint)
     # instead of computed as entry ± sl_dist.
@@ -262,19 +312,24 @@ def simulate_trades(
 
     # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
     # 1 = entry at next bar open (default, no look-ahead).
-    entry_delay = exit_params.get("entry_delay", 1)
+    entry_delay = resolve_entry_delay(exit_params)
 
     # Breakeven/trailing: same source as the training labels.
     breakeven_trigger, trail_atr_mult, trail_pips = resolve_trailing_params(
         ctx, exit_params
     )
+    breakeven_offset = resolve_breakeven_offset(ctx, exit_params)
 
     # Resolve per-bar trail distances: range mode uses the OR range as trail
     # distance (structural), ATR mode uses ATR * trail_atr_mult.
     trail_dists = np.zeros(len(df), dtype=np.float64)
     if trail_pips > 0:
         trail_dists[:] = ctx.spread * trail_pips
-    elif trail_atr_mult > 0.0:
+    elif trail_atr_mult > 0.0 or (
+        breakeven_trigger > 0.0 and exit_params.get("tp_mode", "atr") == "range"
+    ):
+        # Range mode trails at the range once breakeven is reached, with or
+        # without ``trail_atr_mult`` (the labels do the same).
         tp_mode = exit_params.get("tp_mode", "atr")
         if tp_mode == "range":
             exit_strategy_cls = get_exit_strategy(ctx.exit_strategy)
@@ -403,6 +458,8 @@ def simulate_trades(
         direction = None
         if long_ok != short_ok:
             direction = 1 if long_ok else -1
+        if direction and not tradable[i]:
+            direction = None
 
         if direction:
             sl_abs = None
@@ -430,6 +487,7 @@ def simulate_trades(
                 sl_level_mult=sl,
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
+                breakeven_offset=breakeven_offset,
                 trail_distance=td,
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
