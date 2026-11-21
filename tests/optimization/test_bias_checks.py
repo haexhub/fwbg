@@ -168,3 +168,11 @@ def test_systematic_check_warns_on_a_low_mean_instead_of_counting_it_ok():
     check = check_systematic_bias([_result([0.3], 0.3, 0)], verbose=False)
     assert check["ok_assets"] == 0
     assert check["warned_assets"] == 1
+
+
+def test_bias_output_says_the_inner_cv_models_are_reduced(capsys):
+    check_asset_bias(_result([2.5, 2.4, 2.6, 2.5, 2.5, 2.5], 2.5, 0))
+    out = capsys.readouterr().out
+    assert "BIAS DETECTED" in out
+    assert "inner CV trains reduced models" in out
+    assert "half the trees" in out
