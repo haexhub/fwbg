@@ -89,8 +89,12 @@ first bar within 31 days of it; an explicit `date_to` needs a last bar within 7
 days of it (weekends, exchange holidays). Any explicit `date_from` or `date_to`
 also needs the bars inside that window to have no hole longer than 14 days: a
 hole that long is taken for a failed download, not a holiday, and triggers a
-fresh download. The scan uses the downloader's `.quality.json` when it is newer
-than the file. A request without dates accepts any existing file. When the symbol
+fresh download. The downloader records such holes in `.quality.json`
+(`long_holes`). When the next download returns the same hole again, the source
+has no data there: the report lists it under `confirmed_holes` and the file is
+accepted from then on, so a real gap in the source costs one retry, not a
+download on every request. The scan uses the `.quality.json` only when it is
+newer than the file. A request without dates accepts any existing file. When the symbol
 cannot be downloaded, the file is returned with a warning instead.
 
 ## Entry hours per strategy

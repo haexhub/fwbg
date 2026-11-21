@@ -294,6 +294,15 @@ def _fetch_with_progress(instrument, interval, side, start, end, on_frac):
         return df
 
 
+def _previous_long_holes(report_path: Path) -> list[list[str]]:
+    """Long holes the last download recorded, read before its report is replaced."""
+    try:
+        holes = json.loads(report_path.read_text()).get("long_holes", [])
+    except (OSError, ValueError, AttributeError):
+        return []
+    return holes if isinstance(holes, list) else []
+
+
 def download(
     out_dir: Path | str,
     symbols: list[str],
@@ -321,7 +330,7 @@ def download(
     import pandas as pd
 
     from fwbg.data.assets import save_asset_spread
-    from fwbg.data.quality import assess_bars
+    from fwbg.data.quality import assess_bars, confirmed_holes
 
     if timeframe not in TIMEFRAMES:
         raise DukascopyError(
@@ -461,9 +470,13 @@ def download(
             quality_df, timeframe=timeframe, requested_start=start, requested_end=end
         )
         report["spread_p90"] = spread
-        write_text_atomic(
-            dest.with_suffix(".quality.json"), json.dumps(report, indent=2)
+        report_path = dest.with_suffix(".quality.json")
+        # A long hole the previous download had as well is the source's, not a
+        # failed download: data ensure stops fetching the file again for it.
+        report["confirmed_holes"] = confirmed_holes(
+            report["long_holes"], _previous_long_holes(report_path)
         )
+        write_text_atomic(report_path, json.dumps(report, indent=2))
         for warning in report["warnings"]:
             log.warning("dukascopy: %s: %s", clean, warning)
 

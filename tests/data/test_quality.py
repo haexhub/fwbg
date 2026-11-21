@@ -217,3 +217,80 @@ def test_download_writes_quality_report_and_surfaces_warnings(tmp_path, monkeypa
     assert "quality" in result
     assert result["quality"]["warnings"] == report["warnings"]
     assert result["quality"]["n_gaps"] == 1
+
+
+# ── Long holes: failed download or the source's own gap ─────────────────────
+
+
+def _days(start, end):
+    return list(pd.date_range(start, end, freq="D", tz="UTC"))
+
+
+def test_long_holes_lists_only_holes_over_the_limit():
+    from fwbg.data.quality import long_holes
+
+    idx = pd.DatetimeIndex(
+        _days("2024-01-01", "2024-01-10")  # 10-day hole next: a holiday
+        + _days("2024-01-21", "2024-01-31")  # 30-day hole next: too long
+        + _days("2024-03-01", "2024-03-05")
+    )
+    assert long_holes(idx) == [
+        ["2024-01-31T00:00:00+00:00", "2024-03-01T00:00:00+00:00"]
+    ]
+    assert long_holes(idx[:1]) == []
+
+
+def test_a_hole_is_confirmed_only_when_the_previous_download_had_it():
+    from fwbg.data.quality import confirmed_holes
+
+    hole = ["2024-01-31T00:00:00+00:00", "2024-03-01T00:00:00+00:00"]
+    elsewhere = ["2023-05-01T00:00:00+00:00", "2023-06-01T00:00:00+00:00"]
+    shifted = ["2024-02-10T00:00:00+00:00", "2024-02-20T00:00:00+00:00"]
+    assert confirmed_holes([hole], []) == []
+    assert confirmed_holes([hole], [elsewhere]) == []
+    assert confirmed_holes([hole], [shifted]) == [hole]  # overlapping is enough
+
+
+def test_download_confirms_a_hole_the_previous_download_had(tmp_path, monkeypatch):
+    import fwbg.data.dukascopy as dk_mod
+
+    with_hole = pd.DatetimeIndex(
+        _days("2024-01-01", "2024-01-31") + _days("2024-03-01", "2024-03-31")
+    )
+    complete = pd.DatetimeIndex(_days("2024-01-01", "2024-03-31"))
+    served = {"index": with_hole}
+
+    def fake_fetch(instrument, interval, side, fetch_start, fetch_end, on_frac):
+        on_frac(1.0)
+        n = len(served["index"])
+        return pd.DataFrame(
+            {
+                "open": np.full(n, 1.1),
+                "high": np.full(n, 1.2),
+                "low": np.full(n, 1.0),
+                "close": np.full(n, 1.1),
+                "volume": np.full(n, 100.0),
+            },
+            index=served["index"],
+        )
+
+    monkeypatch.setattr(dk_mod, "_fetch_with_progress", fake_fetch)
+    start, end = with_hole[0].to_pydatetime(), with_hole[-1].to_pydatetime()
+
+    def download_report():
+        result = dk_mod.download(tmp_path, ["EURUSD"], "DAY_1", start, end)[0]
+        path = (tmp_path / result["file"]).with_suffix(".quality.json")
+        return json.loads(path.read_text())
+
+    hole = [["2024-01-31T00:00:00+00:00", "2024-03-01T00:00:00+00:00"]]
+    first = download_report()
+    assert first["long_holes"] == hole
+    assert first["confirmed_holes"] == []  # could still be a failed download
+
+    second = download_report()
+    assert second["confirmed_holes"] == hole  # the source has no data there
+
+    served["index"] = complete  # the source filled the hole later
+    third = download_report()
+    assert third["long_holes"] == []
+    assert third["confirmed_holes"] == []

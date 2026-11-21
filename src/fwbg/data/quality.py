@@ -43,6 +43,11 @@ _WEEKEND_GAP_END_SEC = 6 * 86400 + 23 * 3600  # Sunday 23:00 UTC
 # (e.g. a full missing week) would alias into the time-of-week check above.
 _WEEKEND_GAP_MAX_SECONDS = 3 * 86400
 
+# A hole between two bars longer than this is no holiday. fwbg.api.data takes it
+# for a failed download and fetches the file again, unless two downloads in a row
+# returned the same hole: then the source itself has no data there.
+LONG_HOLE_DAYS = 14
+
 
 def _seconds_into_week(ts: pd.Timestamp) -> int:
     """Seconds since Monday 00:00 UTC of *ts*'s week."""
@@ -76,6 +81,39 @@ def _to_utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
+def long_holes(
+    index: pd.DatetimeIndex, min_days: float = LONG_HOLE_DAYS
+) -> list[list[str]]:
+    """``[last bar before, first bar after]`` (ISO, UTC) of every hole longer
+    than *min_days* between consecutive bars of a sorted *index*."""
+    if len(index) < 2:
+        return []
+    idx = pd.DatetimeIndex(index)
+    idx = idx.tz_convert("UTC") if idx.tz is not None else idx.tz_localize("UTC")
+    deltas = np.diff(idx.values) / np.timedelta64(1, "s")
+    return [
+        [idx[i].isoformat(), idx[i + 1].isoformat()]
+        for i in np.where(deltas > min_days * 86400)[0]
+    ]
+
+
+def _utc(stamp: str) -> pd.Timestamp:
+    ts = pd.Timestamp(stamp)
+    return ts.tz_convert("UTC") if ts.tz is not None else ts.tz_localize("UTC")
+
+
+def holes_overlap(a: list[str], b: list[str]) -> bool:
+    """True if the holes ``[start, end]`` *a* and *b* share any time."""
+    return _utc(a[0]) < _utc(b[1]) and _utc(b[0]) < _utc(a[1])
+
+
+def confirmed_holes(
+    holes: list[list[str]], previous: list[list[str]]
+) -> list[list[str]]:
+    """The *holes* of a new download that the previous download had as well."""
+    return [h for h in holes if any(holes_overlap(h, p) for p in previous)]
+
+
 def assess_bars(
     df: pd.DataFrame,
     *,
@@ -104,6 +142,7 @@ def assess_bars(
             "expected_spacing_seconds": expected_spacing,
             "n_gaps": 0,
             "max_gap_seconds": 0.0,
+            "long_holes": [],
             "weekend_gaps_ignored": 0,
             "non_monotonic": 0,
             "duplicate_timestamps": 0,
@@ -182,6 +221,7 @@ def assess_bars(
         "expected_spacing_seconds": expected_spacing,
         "n_gaps": n_gaps,
         "max_gap_seconds": max_gap_seconds,
+        "long_holes": long_holes(idx),
         "weekend_gaps_ignored": weekend_gaps_ignored,
         "non_monotonic": non_monotonic,
         "duplicate_timestamps": duplicate_timestamps,
