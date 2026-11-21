@@ -434,6 +434,7 @@ def _simulate_trade_scale_in_numba(
     trail_distance: float,
     trail_tp_dist: float,
     entry_delay: int = 1,
+    breakeven_offset: float = 0.0,
 ) -> tuple:
     """
     Trade simulation with scale-in (multiple entries at retracement levels).
@@ -451,6 +452,8 @@ def _simulate_trade_scale_in_numba(
         trail_distance: absolute trailing stop distance; 0.0 = off
         trail_tp_dist:  absolute trailing TP distance; 0.0 = off
         entry_delay:    1 = fill at the next open, 0 = at the signal bar's close
+        breakeven_offset: fraction of TP distance added beyond the average entry
+            when the breakeven trigger arms, matching the single-entry kernel.
 
     Returns:
         (result, exit_idx, exit_price, exit_reason, avg_price, total_qty, n_fills)
@@ -529,7 +532,7 @@ def _simulate_trade_scale_in_numba(
             trailing_active,
             breakeven_trigger > 0.0,
             avg_price + direction * tp_distance * breakeven_trigger,
-            avg_price,
+            avg_price + direction * tp_distance * breakeven_offset,
             trail_distance,
             trail_tp_dist,
         )
