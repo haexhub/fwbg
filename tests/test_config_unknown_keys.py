@@ -33,7 +33,9 @@ def test_unknown_key_is_warned_about(caplog):
 
 def test_underscore_keys_are_metadata(caplog):
     with caplog.at_level(logging.WARNING, logger="fwbg.core.config"):
-        cfg = StrategyConfig.from_dict({"name": "x", "_refs": ["a"], "_strategy_dir": "/tmp"})
+        cfg = StrategyConfig.from_dict(
+            {"name": "x", "_refs": ["a"], "_strategy_dir": "/tmp"}
+        )
     assert cfg.name == "x"
     assert caplog.text == ""
 
