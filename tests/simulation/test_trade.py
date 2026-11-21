@@ -1350,6 +1350,43 @@ class TestAttachRegimeLabels:
         assert trades[0]["trend_regime"] in ("ranging", "trending", "strong_trend")
 
 
+class TestAttachRegimeLabelsAdxWarmUp:
+    def test_entry_inside_the_adx_warm_up_gets_no_trend_regime(self):
+        # ta reports ADX 0.0 until 2 * 14 - 1 bars exist, which used to label an
+        # entry there "ranging"; the shared Wilder ADX leaves it unknown.
+        n = 60
+        rng = np.random.default_rng(42)
+        base = 1.0 + np.cumsum(rng.normal(0, 0.001, n))
+        df = pd.DataFrame({"O": base, "H": base + 0.002, "L": base - 0.002, "C": base})
+        trades = [{"entry_idx": 5}, {"entry_idx": 26}, {"entry_idx": 27}]
+        attach_regime_labels(trades, df)
+        assert trades[0]["trend_regime"] is None
+        assert trades[1]["trend_regime"] is None
+        assert trades[2]["trend_regime"] in ("ranging", "trending", "strong_trend")
+
+    def test_fallback_matches_the_adx_indicator(self):
+        from fwbg.plugins import import_plugin_module
+
+        n = 80
+        rng = np.random.default_rng(7)
+        base = 1.0 + np.cumsum(rng.normal(0, 0.001, n))
+        df = pd.DataFrame({"O": base, "H": base + 0.002, "L": base - 0.002, "C": base})
+        adx_plugin = import_plugin_module("fwbg-core", "indicators", "adx")
+        # the indicator column is shifted by one bar; undo that to compare
+        column = adx_plugin.ADXIndicator().compute(df, periods=[14])["adx_14"]
+        expected = column.shift(-1).iloc[40]
+        trades = [{"entry_idx": 40}]
+        attach_regime_labels(trades, df)
+        bucket = (
+            "ranging"
+            if expected < 20
+            else "trending"
+            if expected < 40
+            else "strong_trend"
+        )
+        assert trades[0]["trend_regime"] == bucket
+
+
 class TestAttachRegimeLabelsAtrWarmUp:
     def test_entry_inside_the_atr_warm_up_gets_no_vol_regime(self):
         # ta reports ATR 0.0 for the first 13 bars, which used to label an entry
