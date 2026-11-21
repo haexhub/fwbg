@@ -78,6 +78,21 @@ data checks first (filler bars dropped). Next to `NAS100_DAY_1.csv` the command
 writes `NAS100_DAY_1.session.json` (session, source, sessions seen and dropped,
 source checks) and a datasource `config.json` when there is none.
 
+Unreadable or invalid input (non-positive prices, unparseable timestamps, a file
+that cannot be written) ends the command with a one-line message and exit status 1.
+
+## When a cached file is re-downloaded
+
+`POST /api/data/ensure` serves an existing file from a CSV datasource unless the
+request is explicit and the file does not fit it. An explicit `date_from` needs a
+first bar within 31 days of it; an explicit `date_to` needs a last bar within 7
+days of it (weekends, exchange holidays). Any explicit `date_from` or `date_to`
+also needs the bars inside that window to have no hole longer than 14 days: a
+hole that long is taken for a failed download, not a holiday, and triggers a
+fresh download. The scan uses the downloader's `.quality.json` when it is newer
+than the file. A request without dates accepts any existing file. When the symbol
+cannot be downloaded, the file is returned with a warning instead.
+
 ## Entry hours per strategy
 
 `filters.entry_hours` restricts entries to bars that close inside a session, in the

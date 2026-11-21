@@ -16,10 +16,16 @@ from fwbg.data.validation import DataCheckError
 # ``fwbg.cli`` re-exports ``main()``, which shadows the module of the same name.
 cli_main = importlib.import_module("fwbg.cli.main")
 CASH = parse_trading_hours(
-    {"tz": "America/New_York", "windows": [{"days": "Mon-Fri", "start": "09:30", "end": "16:00"}]}
+    {
+        "tz": "America/New_York",
+        "windows": [{"days": "Mon-Fri", "start": "09:30", "end": "16:00"}],
+    }
 )
 GLOBEX = parse_trading_hours(
-    {"tz": "America/New_York", "windows": [{"days": "Sun-Thu", "start": "18:00", "end": "17:00"}]}
+    {
+        "tz": "America/New_York",
+        "windows": [{"days": "Sun-Thu", "start": "18:00", "end": "17:00"}],
+    }
 )
 
 
@@ -27,7 +33,9 @@ def m15(start: str, end: str) -> pd.DataFrame:
     """15-minute UTC bars, close = 1000 + minutes since start / 100, volume 1."""
     idx = pd.date_range(start, end, freq="15min", inclusive="left")
     c = 1000 + np.arange(len(idx)) * 0.15
-    return pd.DataFrame({"O": c - 0.05, "H": c + 0.1, "L": c - 0.1, "C": c, "V": 1.0}, index=idx)
+    return pd.DataFrame(
+        {"O": c - 0.05, "H": c + 0.1, "L": c - 0.1, "C": c, "V": 1.0}, index=idx
+    )
 
 
 def test_cash_bar_ends_at_the_cash_close_not_at_midnight():
@@ -97,7 +105,15 @@ def test_cli_writes_a_datasource_with_provenance(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["fwbg", "data", "session-bars", "--input", str(source), "--datasource", "cash"],
+        [
+            "fwbg",
+            "data",
+            "session-bars",
+            "--input",
+            str(source),
+            "--datasource",
+            "cash",
+        ],
     )
     cli_main.main()
     out = root / "cash" / "datasource" / "NAS100_DAY_1.csv"
@@ -105,7 +121,9 @@ def test_cli_writes_a_datasource_with_provenance(tmp_path, monkeypatch):
     assert list(bars.index) == ["2026-03-02 00:00:00", "2026-03-03 00:00:00"]
     provenance = json.loads(out.with_suffix(".session.json").read_text())
     assert provenance["session"] == "cash" and provenance["bars"] == 2
-    assert json.loads((root / "cash" / "config.json").read_text())["path"] == str(out.parent)
+    assert json.loads((root / "cash" / "config.json").read_text())["path"] == str(
+        out.parent
+    )
 
 
 def test_cli_rejects_an_unknown_session(tmp_path, monkeypatch):
@@ -113,7 +131,45 @@ def test_cli_rejects_an_unknown_session(tmp_path, monkeypatch):
     m15("2026-03-02 05:00", "2026-03-02 06:00").rename_axis("T").to_csv(source)
     monkeypatch.setattr(trading_hours, "load_asset_overrides", lambda: {})
     monkeypatch.setattr(
-        sys, "argv", ["fwbg", "data", "session-bars", "--input", str(source), "--datasource", "x"]
+        sys,
+        "argv",
+        ["fwbg", "data", "session-bars", "--input", str(source), "--datasource", "x"],
     )
     with pytest.raises(SystemExit, match="no 'cash' session"):
         cli_main.main()
+
+
+def _run_cli(monkeypatch, source, *extra):
+    monkeypatch.setattr(trading_hours, "load_asset_overrides", lambda: {})
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fwbg",
+            "data",
+            "session-bars",
+            "--input",
+            str(source),
+            "--datasource",
+            "x",
+            *extra,
+        ],
+    )
+    cli_main.main()
+
+
+def test_cli_reports_invalid_ohlc_cleanly(tmp_path, monkeypatch):
+    source = tmp_path / "NAS100_MINUTE_15.csv"
+    source.write_text("T,O,H,L,C,V\n2026-03-02 14:30:00,-1,2,1,1,1\n")
+    with pytest.raises(SystemExit) as exc:
+        _run_cli(monkeypatch, source)
+    assert isinstance(exc.value.code, str)  # a message, not a traceback; exit status 1
+    assert "non-positive" in exc.value.code and "NAS100_MINUTE_15.csv" in exc.value.code
+
+
+def test_cli_reports_unparseable_timestamps_cleanly(tmp_path, monkeypatch):
+    source = tmp_path / "NAS100_MINUTE_15.csv"
+    source.write_text("T,O,H,L,C,V\nnot-a-date,1,2,1,1,1\n")
+    with pytest.raises(SystemExit) as exc:
+        _run_cli(monkeypatch, source)
+    assert isinstance(exc.value.code, str) and "not-a-date" in exc.value.code

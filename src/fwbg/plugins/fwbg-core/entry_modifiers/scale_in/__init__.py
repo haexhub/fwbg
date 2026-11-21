@@ -90,6 +90,7 @@ def _compute_targets_scale_in_numba(
     breakeven_trigger: float,
     entry_delay: int = 1,
     nan_incomplete: bool = False,
+    breakeven_offset: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -121,6 +122,7 @@ def _compute_targets_scale_in_numba(
             trail_dist,
             trail_tp,
             entry_delay,
+            breakeven_offset,
         )
         if nan_incomplete and _window_incomplete(
             i + 1, n, max_bars, timeout_val, reason_long
@@ -149,6 +151,7 @@ def _compute_targets_scale_in_numba(
             trail_dist,
             trail_tp,
             entry_delay,
+            breakeven_offset,
         )
         if nan_incomplete and _window_incomplete(
             i + 1, n, max_bars, timeout_val, reason_short
@@ -185,6 +188,7 @@ def _compute_targets_scale_in_with_durations_numba(
     breakeven_trigger: float,
     entry_delay: int = 1,
     nan_incomplete: bool = False,
+    breakeven_offset: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -219,6 +223,7 @@ def _compute_targets_scale_in_with_durations_numba(
                 trail_dist,
                 trail_tp,
                 entry_delay,
+                breakeven_offset,
             )
         )
         if nan_incomplete and _window_incomplete(
@@ -250,6 +255,7 @@ def _compute_targets_scale_in_with_durations_numba(
                 trail_dist,
                 trail_tp,
                 entry_delay,
+                breakeven_offset,
             )
         )
         if nan_incomplete and _window_incomplete(
@@ -302,6 +308,7 @@ class ScaleInModifier(BaseEntryModifier):
         trail_tp_dist_arr: np.ndarray = None,
         entry_delay: int = 1,
         nan_incomplete: bool = False,
+        breakeven_offset: float = 0.0,
         **kwargs,
     ):
         if levels is None:
@@ -332,6 +339,7 @@ class ScaleInModifier(BaseEntryModifier):
                 float(breakeven_trigger),
                 int(entry_delay),
                 bool(nan_incomplete),
+                float(breakeven_offset),
             )
 
         return _call_numba(
@@ -354,6 +362,7 @@ class ScaleInModifier(BaseEntryModifier):
             float(breakeven_trigger),
             int(entry_delay),
             bool(nan_incomplete),
+            float(breakeven_offset),
         )
 
     @classmethod

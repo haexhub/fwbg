@@ -1795,3 +1795,88 @@ class TestRetestNeverOnBreakBar:
         assert col.loc["2024-01-02 10:00"] == 0.0
         assert col.dropna().sum() == 1.0
         assert col[col == 1.0].index[0].hour == 13  # raw 12:00, shifted
+
+
+def _dst_spike_frame():
+    """Hourly UTC bars across the US spring-forward (2024-03-10). The last bar of
+    two New York trading days (16:00 local) carries a unique high of 200: on
+    2024-03-05 (EST, 21:00 UTC) and on 2024-03-12 (EDT, 20:00 UTC)."""
+    idx = pd.date_range("2024-03-04", "2024-03-15 23:00", freq="h")
+    df = pd.DataFrame({"O": 100.0, "H": 101.0, "L": 99.0, "C": 100.0}, index=idx)
+    df.loc["2024-03-05 21:00", "H"] = 200.0
+    df.loc["2024-03-12 20:00", "H"] = 200.0
+    return df
+
+
+def _high_dist(df, start, end, tz):
+    """Unshifted PDH distance (pdh - close, ATR fixed at 1) per bar."""
+    feats = _pdl._compute_pdl_features(
+        df,
+        np.ones(len(df)),
+        20,
+        session_start_hour=start,
+        session_end_hour=end,
+        range_scope=("all",),
+        session_timezone=tz,
+    )
+    col = [k for k in feats if k.endswith("pdl_high_dist")]
+    assert len(col) == 1
+    return pd.Series(feats[col[0]], index=df.index)
+
+
+class TestPDLSessionTimezone:
+    def test_day_boundary_follows_dst(self):
+        df = _dst_spike_frame()
+        local = _high_dist(df, 17, 16, "America/New_York")
+
+        # 17:00 New York opens the next trading day in winter (22:00 UTC) ...
+        assert local.loc["2024-03-05 22:00"] == pytest.approx(200 - 100)
+        # ... and in summer (21:00 UTC): the 20:00 UTC spike is the previous day.
+        assert local.loc["2024-03-12 21:00"] == pytest.approx(200 - 100)
+        # The spike bar itself still belongs to the day that produced it.
+        assert local.loc["2024-03-12 20:00"] == pytest.approx(101 - 100)
+
+    def test_fixed_utc_hours_miss_the_summer_boundary(self):
+        """Without a time zone a 22:00 UTC boundary is an hour late in summer:
+        the bar at 21:00 UTC still sees the day before (the documented default)."""
+        df = _dst_spike_frame()
+        fixed = _high_dist(df, 22, 21, None)
+        assert fixed.loc["2024-03-05 22:00"] == pytest.approx(200 - 100)
+        assert fixed.loc["2024-03-12 21:00"] == pytest.approx(101 - 100)
+
+    def test_default_is_unchanged(self):
+        df = _dst_spike_frame()
+        base = _get_indicator().compute(df)
+        explicit = _get_indicator().compute(df, session_timezone=None)
+        pd.testing.assert_frame_equal(base, explicit)
+        assert _get_indicator().get_default_params()["session_timezone"] is None
+
+    def test_compute_wires_the_timezone_through(self):
+        df = _dst_spike_frame()
+        kw = dict(session_start_hour=17, session_end_hour=16, range_scope=["all"])
+        local = _get_indicator().compute(df, session_timezone="America/New_York", **kw)
+        utc = _get_indicator().compute(df, **kw)
+        col = [c for c in local.columns if c.endswith("pdl_high_dist")][0]
+        # bar 21:00 UTC on 2024-03-12 (17:00 EDT) shows on the next row; only
+        # the New York clock has already rolled to the new day there.
+        assert local.loc["2024-03-12 22:00", col] > utc.loc["2024-03-12 22:00", col]
+
+    def test_tz_aware_index_is_converted(self):
+        df = _dst_spike_frame()
+        aware = df.copy()
+        aware.index = aware.index.tz_localize("UTC")
+        a = _high_dist(aware, 17, 16, "America/New_York")
+        b = _high_dist(df, 17, 16, "America/New_York")
+        np.testing.assert_allclose(a.to_numpy(), b.to_numpy(), equal_nan=True)
+
+    def test_unknown_timezone_raises(self):
+        with pytest.raises(ValueError, match="Unknown session_timezone"):
+            _get_indicator().compute(_dst_spike_frame(), session_timezone="Mars/Base")
+
+    def test_resample_tf_is_rejected_with_timezone(self):
+        with pytest.raises(ValueError, match="resample_tf"):
+            _get_indicator().compute(
+                _dst_spike_frame(),
+                session_timezone="America/New_York",
+                resample_tf="1h",
+            )
