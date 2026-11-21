@@ -116,9 +116,13 @@ def test_setup_fails_when_close_falls_below_the_impulse_low(indicator):
     assert out["tpm_entry_long"].dropna().sum() == 0
 
 
-def test_short_entry_is_the_mirror_image_of_the_long_entry(indicator, long_setup):
-    long_out = indicator.compute(long_setup, **PARAMS)
-    short_out = indicator.compute(_mirror(long_setup), **PARAMS)
+@pytest.mark.parametrize("depth_reference", ["broken_level", "impulse_peak"])
+def test_short_entry_is_the_mirror_image_of_the_long_entry(
+    indicator, long_setup, depth_reference
+):
+    params = {**PARAMS, "depth_reference": depth_reference}
+    long_out = indicator.compute(long_setup, **params)
+    short_out = indicator.compute(_mirror(long_setup), **params)
     pd.testing.assert_series_equal(
         long_out["tpm_entry_long"], short_out["tpm_entry_short"], check_names=False
     )
@@ -162,12 +166,18 @@ def test_entry_needs_a_valid_atr(indicator, long_setup):
     )  # the setup is still tracked
 
 
-def test_features_use_only_past_bars(indicator):
+@pytest.mark.parametrize("depth_reference", ["broken_level", "impulse_peak"])
+def test_features_use_only_past_bars(indicator, depth_reference):
     """Truncating the data after bar n-1 leaves rows 0..n-1 unchanged, for every n."""
     # a long setup followed by its mirror image: one long and one short entry
     second = 256.0 - CLOSE
     df = _frame(np.concatenate([CLOSE, second]))
-    params = {"ema_period": 20, "swing_lookback": 8, "atr_period": 5}
+    params = {
+        "ema_period": 20,
+        "swing_lookback": 8,
+        "atr_period": 5,
+        "depth_reference": depth_reference,
+    }
     full = indicator.compute(df, **params)
     assert full["tpm_entry_long"].sum() >= 1
     assert full["tpm_entry_short"].sum() >= 1
@@ -182,3 +192,59 @@ def test_declared_columns_are_produced(indicator, long_setup):
         c for c in out.columns if c.startswith("tpm_")
     }
     assert set(indicator.get_signal_columns()) <= set(out.columns)
+
+
+# --- depth_reference ---------------------------------------------------------
+
+# After the uptrend the breakout bar 60 has the high 160.2; the broken swing high
+# (bars 50..59) is 159.2 and the swing low of the same window 149.8. This
+# pullback is 40 % of the impulse measured from the peak (160.2) but only 34 %
+# measured from the broken level (159.2) when bar 66 breaks the local high.
+SHALLOW_CLOSE = np.array(UPTREND + [158.0, 156.0, 155.0, 154.9, 154.8, 156.0, 156.0])
+PEAK, BROKEN_LEVEL, IMPULSE_LOW = 160.2, 159.2, 149.8
+
+
+def test_default_depth_reference_is_the_broken_level(indicator, long_setup):
+    assert indicator.get_default_params()["depth_reference"] == "broken_level"
+    default = indicator.compute(long_setup, **PARAMS)
+    explicit = indicator.compute(long_setup, depth_reference="broken_level", **PARAMS)
+    pd.testing.assert_frame_equal(default, explicit)
+
+
+def test_impulse_peak_measures_the_depth_from_the_highest_high(indicator):
+    df = _frame(SHALLOW_CLOSE)
+    out = indicator.compute(df, depth_reference="impulse_peak", **PARAMS)
+    for bar in range(61, 66):
+        expected = (PEAK - df["C"].iloc[bar]) / (PEAK - IMPULSE_LOW)
+        assert out["tpm_pullback_pct"].iloc[bar + 1] == pytest.approx(expected)
+
+
+def test_a_shallow_pullback_enters_only_when_measured_from_the_peak(indicator):
+    df = _frame(SHALLOW_CLOSE)
+    broken = indicator.compute(df, **PARAMS)
+    peak = indicator.compute(df, depth_reference="impulse_peak", **PARAMS)
+    assert broken["tpm_entry_long"].dropna().sum() == 0
+    assert list(peak.index[peak["tpm_entry_long"] == 1]) == [df.index[67]]
+    # the stop sits below the pullback low since the peak (bar 64: 154.8 - 0.2)
+    atr = _reference_atr(df, 5)[66]
+    expected = (156.0 - 154.6) + 0.25 * atr
+    assert peak["tpm_sl_dist_long"].iloc[67] == pytest.approx(expected)
+
+
+def test_a_new_peak_without_a_breakout_close_restarts_the_pullback(indicator):
+    """A wick to 161 on bar 61 closes below the swing high: no BOS refresh, but
+    the depth is measured from the new peak and its pullback low restarts."""
+    df = _frame(np.array(UPTREND + [157.0, 158.0, 156.0, 156.0]))
+    df.loc[df.index[61], "H"] = 161.0
+    out = indicator.compute(df, depth_reference="impulse_peak", **PARAMS)
+    for bar in (62, 63):
+        expected = (161.0 - df["C"].iloc[bar]) / (161.0 - IMPULSE_LOW)
+        assert out["tpm_pullback_pct"].iloc[bar + 1] == pytest.approx(expected)
+    broken = indicator.compute(df, **PARAMS)
+    expected = (BROKEN_LEVEL - df["C"].iloc[62]) / (BROKEN_LEVEL - IMPULSE_LOW)
+    assert broken["tpm_pullback_pct"].iloc[63] == pytest.approx(expected)
+
+
+def test_unknown_depth_reference_is_rejected(indicator, long_setup):
+    with pytest.raises(ValueError, match="depth_reference"):
+        indicator.compute(long_setup, depth_reference="swing", **PARAMS)
