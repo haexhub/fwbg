@@ -122,6 +122,7 @@ class FixedExitStrategy(BaseExitStrategy):
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
                 entry_delay=entry_delay,
+                nan_incomplete=True,
                 **entry_mod_params,
             )
 

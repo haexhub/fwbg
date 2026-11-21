@@ -32,6 +32,7 @@ from numba import njit
 
 from fwbg_sdk import BaseEntryModifier, register_entry_modifier
 from fwbg.simulation import _simulate_trade_scale_in_numba
+from fwbg.simulation.numba_core import _window_incomplete
 
 _CACHE_DIR = pathlib.Path(__file__).parent / "__pycache__"
 _MAX_LEVELS = 10
@@ -88,6 +89,7 @@ def _compute_targets_scale_in_numba(
     scale_qty_mult: float,
     breakeven_trigger: float,
     entry_delay: int = 1,
+    nan_incomplete: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -99,7 +101,7 @@ def _compute_targets_scale_in_numba(
         trail_dist = trail_dist_arr[i]
         trail_tp = trail_tp_dist_arr[i]
 
-        result_long, _, _, _, _, _, _ = _simulate_trade_scale_in_numba(
+        result_long, _, _, reason_long, _, _, _ = _simulate_trade_scale_in_numba(
             opens,
             closes,
             highs,
@@ -120,10 +122,14 @@ def _compute_targets_scale_in_numba(
             trail_tp,
             entry_delay,
         )
-        if result_long == 1.0:
+        if nan_incomplete and _window_incomplete(
+            i + 1, n, max_bars, timeout_val, reason_long
+        ):
+            targets_long[i] = np.nan
+        elif result_long == 1.0:
             targets_long[i] = 1.0
 
-        result_short, _, _, _, _, _, _ = _simulate_trade_scale_in_numba(
+        result_short, _, _, reason_short, _, _, _ = _simulate_trade_scale_in_numba(
             opens,
             closes,
             highs,
@@ -144,8 +150,17 @@ def _compute_targets_scale_in_numba(
             trail_tp,
             entry_delay,
         )
-        if result_short == 1.0:
+        if nan_incomplete and _window_incomplete(
+            i + 1, n, max_bars, timeout_val, reason_short
+        ):
+            targets_short[i] = np.nan
+        elif result_short == 1.0:
             targets_short[i] = 1.0
+
+    if nan_incomplete and n > 0:
+        # The last bar has no entry: its outcome is unknown.
+        targets_long[n - 1] = np.nan
+        targets_short[n - 1] = np.nan
 
     return targets_long, targets_short
 
@@ -169,6 +184,7 @@ def _compute_targets_scale_in_with_durations_numba(
     scale_qty_mult: float,
     breakeven_trigger: float,
     entry_delay: int = 1,
+    nan_incomplete: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -182,55 +198,71 @@ def _compute_targets_scale_in_with_durations_numba(
         trail_dist = trail_dist_arr[i]
         trail_tp = trail_tp_dist_arr[i]
 
-        result_long, exit_long, _, _, _, _, _ = _simulate_trade_scale_in_numba(
-            opens,
-            closes,
-            highs,
-            lows,
-            i,
-            1,
-            tp_distance,
-            sl_distance,
-            spread,
-            slippage,
-            max_bars,
-            timeout_val,
-            scale_levels,
-            n_levels,
-            scale_qty_mult,
-            breakeven_trigger,
-            trail_dist,
-            trail_tp,
-            entry_delay,
+        result_long, exit_long, _, reason_long, _, _, _ = (
+            _simulate_trade_scale_in_numba(
+                opens,
+                closes,
+                highs,
+                lows,
+                i,
+                1,
+                tp_distance,
+                sl_distance,
+                spread,
+                slippage,
+                max_bars,
+                timeout_val,
+                scale_levels,
+                n_levels,
+                scale_qty_mult,
+                breakeven_trigger,
+                trail_dist,
+                trail_tp,
+                entry_delay,
+            )
         )
-        if result_long == 1.0:
+        if nan_incomplete and _window_incomplete(
+            i + 1, n, max_bars, timeout_val, reason_long
+        ):
+            targets_long[i] = np.nan
+        elif result_long == 1.0:
             targets_long[i] = 1.0
         durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
-        result_short, exit_short, _, _, _, _, _ = _simulate_trade_scale_in_numba(
-            opens,
-            closes,
-            highs,
-            lows,
-            i,
-            -1,
-            tp_distance,
-            sl_distance,
-            spread,
-            slippage,
-            max_bars,
-            timeout_val,
-            scale_levels,
-            n_levels,
-            scale_qty_mult,
-            breakeven_trigger,
-            trail_dist,
-            trail_tp,
-            entry_delay,
+        result_short, exit_short, _, reason_short, _, _, _ = (
+            _simulate_trade_scale_in_numba(
+                opens,
+                closes,
+                highs,
+                lows,
+                i,
+                -1,
+                tp_distance,
+                sl_distance,
+                spread,
+                slippage,
+                max_bars,
+                timeout_val,
+                scale_levels,
+                n_levels,
+                scale_qty_mult,
+                breakeven_trigger,
+                trail_dist,
+                trail_tp,
+                entry_delay,
+            )
         )
-        if result_short == 1.0:
+        if nan_incomplete and _window_incomplete(
+            i + 1, n, max_bars, timeout_val, reason_short
+        ):
+            targets_short[i] = np.nan
+        elif result_short == 1.0:
             targets_short[i] = 1.0
         durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
+
+    if nan_incomplete and n > 0:
+        targets_long[n - 1] = np.nan
+        targets_short[n - 1] = np.nan
 
     return targets_long, targets_short, durations_long, durations_short
 
@@ -269,6 +301,7 @@ class ScaleInModifier(BaseEntryModifier):
         breakeven_trigger: float = 0.0,
         trail_tp_dist_arr: np.ndarray = None,
         entry_delay: int = 1,
+        nan_incomplete: bool = False,
         **kwargs,
     ):
         if levels is None:
@@ -298,6 +331,7 @@ class ScaleInModifier(BaseEntryModifier):
                 float(qty_multiplier),
                 float(breakeven_trigger),
                 int(entry_delay),
+                bool(nan_incomplete),
             )
 
         return _call_numba(
@@ -319,6 +353,7 @@ class ScaleInModifier(BaseEntryModifier):
             float(qty_multiplier),
             float(breakeven_trigger),
             int(entry_delay),
+            bool(nan_incomplete),
         )
 
     @classmethod
