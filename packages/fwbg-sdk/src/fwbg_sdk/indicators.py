@@ -204,8 +204,9 @@ class BaseIndicator(BasePlugin, ABC):
 
     def get_signal_columns(self, params=None) -> List[str]:
         """
-        Gibt Liste der Signal-Spalten zurück: diskrete Entscheidungs-/Event-Spalten
-        (z.B. -1, 0, 1), die bewusst NICHT mit ``shift_features()`` verschoben sind.
+        Gibt Liste der unverschobenen Entscheidungs-Spalten zurück. Sie können
+        diskrete Events (z.B. -1, 0, 1) oder kontinuierliche Messwerte enthalten;
+        ``get_continuous_signal_columns()`` kennzeichnet letztere für den Chart.
 
         Zeile ``i`` einer Signal-Spalte beschreibt die Entscheidung am Close von
         Bar ``i`` (Regeln in ``signal_rules`` / Exit-Spalten; Entry am nächsten
@@ -229,6 +230,14 @@ class BaseIndicator(BasePlugin, ABC):
             Liste der Signal-Spaltennamen, oder leere Liste
         """
         return self._signal_columns
+
+    def get_continuous_signal_columns(self, params=None) -> List[str]:
+        """Return signal columns whose values are continuous rather than events.
+
+        These columns remain unshifted decision inputs, but charts must render
+        them as lines and must not turn value changes into signal markers.
+        """
+        return []
 
     def get_calendar_columns(self, params=None) -> List[str]:
         """

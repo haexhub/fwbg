@@ -553,6 +553,11 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         if hasattr(plugin, "get_unshifted_columns")
         else set()
     )
+    continuous_signal_cols = (
+        set(_call_plugin_method(plugin.get_continuous_signal_columns, params))
+        if hasattr(plugin, "get_continuous_signal_columns")
+        else set()
+    )
 
     # --- Adjust shift for chart display ---
     # A chart is a view, not a model input: every value is drawn on the bar
@@ -627,6 +632,10 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             elif unique_vals:
                 signal_columns.append(col)
 
+    discrete_signal_columns = [
+        col for col in signal_columns if col not in continuous_signal_cols
+    ]
+
     timestamps = [int(ts.timestamp() * 1000) for ts in result_slice.index]
 
     # --- Overlay data (absolute price-scale values for main chart) ---
@@ -643,6 +652,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         "columns": available_cols,
         "plot_columns": plot_columns,
         "signal_columns": signal_columns,
+        "discrete_signal_columns": discrete_signal_columns,
         "overlay_columns": overlay_cols,
         "overlay_data": overlay_data,
         "timestamps": timestamps,
