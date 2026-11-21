@@ -12,6 +12,15 @@ import pandas as pd
 from fwbg_sdk.base import BasePlugin, PluginPhase
 
 
+class UntrainableLabelsError(ValueError):
+    """The training labels cannot support a fit (for example a single class).
+
+    A model raises it from ``train`` before fitting.  Such a fold is a data
+    outcome, not a bug: the caller trains no model for it and the fold yields
+    no trades.
+    """
+
+
 @dataclass
 class TrainingContext:
     """Everything a model might need for training."""
@@ -253,7 +262,9 @@ class BaseModel(BasePlugin, ABC):
 
         Returns:
             None (use global TP/SL) or ndarray of shape (n_samples, 2)
-            where column 0 = TP distance, column 1 = SL distance.
+            where column 0 = TP distance, column 1 = SL distance.  A row whose
+            distances cannot be computed (for example NaN ATR during warm-up)
+            holds NaN: the simulation opens no trade on that bar.
         """
         return None
 

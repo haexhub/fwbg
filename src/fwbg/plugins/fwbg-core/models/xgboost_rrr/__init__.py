@@ -31,9 +31,13 @@ def _compute_binary_targets(
     """Compute binary Win/Loss targets for a specific RRR variant.
 
     Simulates trades with TP = rrr * base_sl_atr * ATR, SL = base_sl_atr * ATR.
-    Entry at next bar open (entry_delay=1). Returns 1 if TP is hit first, 0 otherwise.
-    A bar that touches both levels counts as a stop (the intrabar order is unknown;
-    same convention as the simulation kernels).
+    Entry at next bar open (entry_delay=1). Returns 1.0 if TP is hit first, 0.0
+    otherwise. A bar that touches both levels counts as a stop (the intrabar order
+    is unknown; same convention as the simulation kernels).
+
+    NaN marks a trade whose outcome is not known: neither level was reached and
+    the ``max_bars`` window runs past the end of the frame (the last bar has no
+    entry at all).  Training drops such rows instead of reading them as losses.
     """
     if atr_col not in df.columns:
         fallback = "vol_atr" if "vol_atr" in df.columns else None
@@ -50,7 +54,9 @@ def _compute_binary_targets(
     lows = df["L"].values
     atr = df[atr_col].values.astype(np.float64)
     n = len(df)
-    targets = np.zeros(n, dtype=np.int32)
+    targets = np.zeros(n, dtype=np.float64)
+    if n:
+        targets[n - 1] = np.nan
 
     for i in range(n - 1):
         atr_i = atr[i]
@@ -61,20 +67,27 @@ def _compute_binary_targets(
         sl_dist = base_sl_atr * atr_i
         entry_price = opens[i + 1]
 
+        settled = False
         if direction == "long":
             for j in range(i + 1, min(i + 1 + max_bars, n)):
                 if entry_price - lows[j] >= sl_dist:
+                    settled = True
                     break
                 if highs[j] - entry_price >= tp_dist:
-                    targets[i] = 1
+                    targets[i] = 1.0
+                    settled = True
                     break
         else:  # short
             for j in range(i + 1, min(i + 1 + max_bars, n)):
                 if highs[j] - entry_price >= sl_dist:
+                    settled = True
                     break
                 if entry_price - lows[j] >= tp_dist:
-                    targets[i] = 1
+                    targets[i] = 1.0
+                    settled = True
                     break
+        if not settled and i + 1 + max_bars > n:
+            targets[i] = np.nan
 
     return targets
 
@@ -89,6 +102,7 @@ class XGBoostRRRModel(BaseStackedXGBoostModel):
     _variant_param_name = "rrr_variants"
     _variant_feature_name = "rrr"
     _default_variants = [2.0, 3.0]
+    _needs_two_classes = True
 
     def __init__(self) -> None:
         super().__init__()
@@ -109,6 +123,10 @@ class XGBoostRRRModel(BaseStackedXGBoostModel):
         from xgboost import XGBClassifier
 
         return XGBClassifier(**params)
+
+    def _post_process_stacked_targets(self, y_stacked: np.ndarray) -> np.ndarray:
+        # Rows with unknown outcomes are gone by now: class labels are 0/1.
+        return y_stacked.astype(np.int32)
 
     def _compute_variant_targets(
         self,
@@ -165,7 +183,10 @@ class XGBoostRRRModel(BaseStackedXGBoostModel):
         features: pd.DataFrame,
         atr: Optional[np.ndarray] = None,
     ) -> Optional[np.ndarray]:
-        """Return per-trade TP/SL based on selected RRR."""
+        """Return per-trade TP/SL based on selected RRR.
+
+        Rows whose ATR is NaN (warm-up) hold NaN distances: no trade there.
+        """
         if self._selected_rrr is None or atr is None:
             return None
 
