@@ -17,9 +17,9 @@ updates:
     labels:
       - "dependencies"
     ignore:
-      # Skip 5.0.0 until the adapter supports Dukascopy 5.x; allow later 5.x releases.
+      # The adapter still relies on requests exported by dukascopy-python 4.x.
       - dependency-name: "dukascopy-python"
-        versions: ["5.0.0"]
+        versions: [">=5.0.0"]
     groups:
       ml:
         patterns:
@@ -102,6 +102,11 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    ignore:
+      # numba needs numpy<2.5, and numpy 2.4.x has no wheels for Python 3.15:
+      # on 3.15 pip builds numpy from source and the slim image has no compiler.
+      - dependency-name: "python"
+        versions: [">=3.15"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
