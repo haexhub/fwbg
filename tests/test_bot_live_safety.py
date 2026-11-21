@@ -251,3 +251,14 @@ def test_last_bar_is_not_trained_as_a_down_sample(tmp_path, monkeypatch):
     # 9 completed bars, the last has no next close: 8 labelled samples, all "up".
     assert seen["target"] == [1] * 8
     assert seen["index"].max() == hour - timedelta(hours=2)
+
+
+def test_signal_is_skipped_when_the_atr_is_unknown(tmp_path):
+    adapter = _adapter(FILLED)
+    bot = _bot(adapter, tmp_path)
+    cache = bot.ohlc_cache["EURUSD"]
+    cache.iloc[-1] = np.nan  # an unusable last bar leaves the ATR undefined
+
+    bot._execute_signal("EURUSD", OrderSide.BUY, 0.9, bot.assets["EURUSD"])
+
+    adapter.submit_order.assert_not_called()

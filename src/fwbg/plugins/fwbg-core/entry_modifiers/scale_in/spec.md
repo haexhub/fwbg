@@ -32,6 +32,10 @@ Entry modifier that simulates scale-in trades: at each bar it runs long and shor
 - `levels` (list[float], default=[0.2, 0.4, 0.6]): Retracement-Levels als Bruchteil der Entry→SL-Distanz. 0.2 = Nachkauf bei 20% Retracement Richtung SL.
 - `qty_multiplier` (float, default=1): Positionsgröße pro Nachkauf relativ zur Initial-Position. 1.0 = gleiche Größe, 0.5 = halbe Größe.
 
+The exit strategy may pass `breakeven_offset` through with `breakeven_trigger`.
+When the trigger arms, the stop moves to the average entry plus the
+direction-adjusted fraction of the TP distance, matching the single-entry simulator.
+
 ## Outputs
 
 - targets_long: np.ndarray[float64] of shape (n,) — 1.0 where a long scale-in trade would win, else 0.0

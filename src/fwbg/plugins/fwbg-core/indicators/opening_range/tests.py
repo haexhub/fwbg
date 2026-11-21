@@ -2607,3 +2607,27 @@ class TestRangeValuesMatchReference:
             assert np.allclose(live[f"{pfx}_range"], high - low)
             checked += len(live)
         assert checked > 800
+
+
+class TestAtrWarmUp:
+    """The ATR floor of the opening range cannot be checked while ATR is unknown."""
+
+    def _up_column(self, res):
+        cols = [c for c in res.columns if c.endswith("_breakout_up")]
+        assert len(cols) == 1
+        return res[cols[0]]
+
+    def test_atr_floor_invalidates_bars_inside_the_warm_up(self):
+        df = _make_ohlc_hourly(n=72)
+        kw = dict(sessions=[0], range_bars=1, atr_period=14, enable_retracement=False)
+        floored = _orb.OpeningRangeIndicator().compute(
+            df, min_range_height_atr=1e-6, **kw
+        )
+        free = _orb.OpeningRangeIndicator().compute(df, **kw)
+
+        # day 1: the range bar is 00:00, ATR(14) is first known at bar 13
+        # (the signal columns are not shifted)
+        warm = slice(1, 13)
+        assert free.pipe(self._up_column).iloc[warm].notna().all()
+        assert floored.pipe(self._up_column).iloc[warm].isna().all()
+        assert floored.pipe(self._up_column).iloc[13:24].notna().all()

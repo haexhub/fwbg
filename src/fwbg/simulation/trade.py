@@ -863,9 +863,9 @@ def attach_regime_labels(trades, df):
     if atr_col:
         atr = df[atr_col]
     else:
-        import ta
+        from fwbg.utils.indicator_math import wilder_atr
 
-        atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
+        atr = wilder_atr(df["H"], df["L"], df["C"], window=14)
 
     adx_col = "adx_14" if "adx_14" in df.columns else None
     if adx_col:
