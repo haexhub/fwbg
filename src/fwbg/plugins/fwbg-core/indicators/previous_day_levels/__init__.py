@@ -19,15 +19,20 @@ range_scope controls which bars are included:
 
 Timeframe: Intraday only (M1-H4). On daily bars returns df unchanged.
 
-Session and day boundary: ``session_start_hour`` / ``session_end_hour`` are
-fixed UTC hours, and for a session crossing midnight the trading day rolls over
-at ``session_start_hour`` UTC.  There is no time zone conversion, so a
-local-time boundary such as the 17:00 New York FX rollover sits at 22:00 UTC in
-winter but 21:00 UTC in summer; pick the start hour for the regime you trade (or
-split the data at the DST switch).
+Session and day boundary: without ``session_timezone``, ``session_start_hour`` /
+``session_end_hour`` are fixed hours of the index clock (UTC for UTC data), and
+for a session crossing midnight the trading day rolls over at
+``session_start_hour``.  There is no time zone conversion, so a local-time
+boundary such as the 17:00 New York FX rollover sits at 22:00 UTC in winter but
+21:00 UTC in summer.  With ``session_timezone`` (an IANA name such as
+"America/New_York") the hours, the session mask and the day grouping are
+evaluated on the wall clock of that zone, so the boundary follows daylight
+saving time; a naive index is read as UTC.  ``session_timezone`` cannot be
+combined with ``resample_tf`` (its bins are aligned on the index clock).
 """
 
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 import pandas as pd
@@ -72,6 +77,25 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
         np.maximum(np.abs(highs - prev_close), np.abs(lows - prev_close)),
     )
     return pd.Series(tr).rolling(period, min_periods=period).mean().values
+
+
+def _local_clock(index: pd.DatetimeIndex, session_timezone: Optional[str]):
+    """Index to read hours and calendar days from.
+
+    ``None`` returns the index unchanged. With a time zone the result is the
+    naive wall-clock time in that zone (a naive index is read as UTC), so hours
+    and day boundaries follow daylight saving time. The result is only used to
+    label bars (hour, day); it is not an index to resample or slice on, because
+    the repeated hour of a fall-back night makes it non-monotonic.
+    """
+    if session_timezone is None:
+        return index
+    try:
+        zone = ZoneInfo(session_timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(f"Unknown session_timezone: {session_timezone!r}") from exc
+    utc = index.tz_localize("UTC") if index.tz is None else index
+    return utc.tz_convert(zone).tz_localize(None)
 
 
 def _resample_offset(
@@ -483,19 +507,27 @@ def _compute_pdl_features(
     min_retracement: float = 0.3,
     breakout_threshold: float = 0.0,
     breakout_threshold_abs: float = 0.0,
+    session_timezone: Optional[str] = None,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all previous day level features for all scope × break × retest modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
 
+    if session_timezone is not None and resample_tf:
+        raise ValueError(
+            "session_timezone cannot be combined with resample_tf: resample bins "
+            "are aligned on the index clock, not on the local trading day"
+        )
+    clock = _local_clock(df.index, session_timezone)
+
     # Group by trading day
     if session_start_hour < session_end_hour:
-        day_group = df.index.normalize()
+        day_group = clock.normalize()
     else:
         offset = pd.Timedelta(hours=24 - session_start_hour)
-        day_group = (df.index + offset).normalize()
+        day_group = (clock + offset).normalize()
 
     # Session mask: only bars within trading hours
-    hours = df.index.hour
+    hours = clock.hour
     if session_start_hour < session_end_hour:
         session_mask = (hours >= session_start_hour) & (hours < session_end_hour)
     else:
@@ -552,7 +584,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     """Previous Day High/Low features for intraday trading."""
 
     name = "previous_day_levels"
-    version = "1.1.0"
+    version = "1.2.0"
     benefits_from_stationary = False
     group = "session"
 
@@ -596,6 +628,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         min_retracement: float = 0.3,
         breakout_threshold: float = 0.0,
         breakout_threshold_abs: float = 0.0,
+        session_timezone: Optional[str] = None,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -626,6 +659,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             min_retracement=min_retracement,
             breakout_threshold=breakout_threshold,
             breakout_threshold_abs=breakout_threshold_abs,
+            session_timezone=session_timezone,
         )
 
         if not features:
@@ -714,6 +748,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "min_retracement": 0.3,
             "breakout_threshold": 0.0,
             "breakout_threshold_abs": 0.0,
+            "session_timezone": None,
         }
 
     @classmethod
@@ -757,9 +792,11 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "type": "int",
                 "default": 7,
                 "description": (
-                    "UTC hour when trading session starts. Fixed UTC hour, no DST "
-                    "handling: a 17:00 New York day boundary is 22:00 UTC in "
-                    "winter and 21:00 UTC in summer."
+                    "Hour when the trading session starts, on the index clock "
+                    "(UTC) or, with session_timezone, on that zone's wall clock. "
+                    "Without session_timezone there is no DST handling: a 17:00 "
+                    "New York day boundary is 22:00 UTC in winter and 21:00 UTC "
+                    "in summer."
                 ),
                 "min": 0,
                 "max": 23,
@@ -768,7 +805,10 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "session_end_hour": {
                 "type": "int",
                 "default": 21,
-                "description": "UTC hour when trading session ends.",
+                "description": (
+                    "Hour when the trading session ends (same clock as "
+                    "session_start_hour)."
+                ),
                 "min": 1,
                 "max": 24,
                 "step": 1,
@@ -877,6 +917,18 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "min": 0.0,
                 "max": 100.0,
                 "step": 1.0,
+            },
+            "session_timezone": {
+                "type": "string",
+                "default": None,
+                "description": (
+                    "IANA timezone in which session_start_hour / session_end_hour "
+                    "and the trading-day boundary are given, e.g. "
+                    "'America/New_York'. Hours and days then follow daylight "
+                    "saving time; naive index timestamps are read as UTC. "
+                    "None = hours are read directly on the index clock (no DST "
+                    "handling). Cannot be combined with resample_tf."
+                ),
             },
         }
 

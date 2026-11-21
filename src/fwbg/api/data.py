@@ -92,7 +92,10 @@ def list_timeframes() -> dict:
 def ensure_data(req: EnsureRequest):
     """Ensure OHLCV data exists for (symbol, timeframe).
 
-    - 200 "ready"      — file already present in a configured CSV source.
+    - 200 "ready"      — file already present in a configured CSV source. For an
+      explicit range the file must also start within 31 days of ``date_from``,
+      end within 7 days of ``date_to`` and have no hole over 14 days inside the
+      range; otherwise it is downloaded again (docs/data-checks.md).
     - 202 "downloading" — download started; poll GET /api/data/ensure/{task_id}.
     - 404              — symbol not known to Dukascopy (no download source).
     - 422              — unsupported timeframe or invalid date range.

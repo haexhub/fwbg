@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from ta.momentum import RSIIndicator
-from ta.volatility import AverageTrueRange
+
+from fwbg.utils.indicator_math import wilder_atr, wilder_rsi
 
 from .engine import validate_daily_index
 
@@ -43,7 +43,12 @@ class SwingSettings:
             raise ValueError("only predeclared 1x and 1.5x leverage supported")
         if not all(
             np.isfinite(x)
-            for x in (self.capital, self.cost_bps, self.cost_multiplier, self.borrow_rate)
+            for x in (
+                self.capital,
+                self.cost_bps,
+                self.cost_multiplier,
+                self.borrow_rate,
+            )
         ):
             raise ValueError("settings must be finite")
         if (
@@ -70,7 +75,9 @@ def validate_bars(bars: pd.DataFrame) -> None:
     """Require valid daily bid/ask OHLC, nonnegative open/close spreads and gaps <=7 days."""
     validate_daily_index(bars.index, "swing bars")
     columns = [
-        f"{side}_{field}" for side in ("bid", "ask") for field in ("open", "high", "low", "close")
+        f"{side}_{field}"
+        for side in ("bid", "ask")
+        for field in ("open", "high", "low", "close")
     ]
     values = bars[columns]
     if not np.isfinite(values.to_numpy()).all() or (values <= 0).any().any():
@@ -81,7 +88,10 @@ def validate_bars(bars: pd.DataFrame) -> None:
                 bars[f"{side}_high"]
                 < bars[[f"{side}_open", f"{side}_close", f"{side}_low"]].max(axis=1)
             )
-            | (bars[f"{side}_low"] > bars[[f"{side}_open", f"{side}_close"]].min(axis=1))
+            | (
+                bars[f"{side}_low"]
+                > bars[[f"{side}_open", f"{side}_close"]].min(axis=1)
+            )
         ).any():
             raise ValueError("OHLC high/low inconsistency")
     if (bars.ask_open < bars.bid_open).any() or (bars.ask_close < bars.bid_close).any():
@@ -97,11 +107,11 @@ def indicators(bars: pd.DataFrame) -> pd.DataFrame:
     for period in (5, 200):
         frame[f"sma{period}"] = close.rolling(period).mean()
     for period in (20, 50, 200):
-        frame[f"ema{period}"] = close.ewm(span=period, adjust=False, min_periods=period).mean()
-    frame["rsi"] = RSIIndicator(close, window=2).rsi()
-    frame["atr"] = AverageTrueRange(
-        bars.bid_high, bars.bid_low, close, window=14
-    ).average_true_range()
+        frame[f"ema{period}"] = close.ewm(
+            span=period, adjust=False, min_periods=period
+        ).mean()
+    frame["rsi"] = wilder_rsi(close, window=2)
+    frame["atr"] = wilder_atr(bars.bid_high, bars.bid_low, close, window=14)
     frame["upper"] = bars.bid_high.shift(1).rolling(55).max()
     frame["lower"] = bars.bid_low.shift(1).rolling(20).min()
     frame["rsi_entry"] = (close > frame.sma200) & (frame.rsi < 10)
@@ -152,9 +162,9 @@ def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
     eligible = np.flatnonzero(
         (bars.index >= pd.Timestamp(settings.start)) & (np.arange(len(bars)) >= 201)
     )
-    if not len(eligible) or bars.index[eligible[0]] > pd.Timestamp(settings.start) + pd.Timedelta(
-        days=7
-    ):
+    if not len(eligible) or bars.index[eligible[0]] > pd.Timestamp(
+        settings.start
+    ) + pd.Timedelta(days=7):
         raise ValueError("insufficient warm-up or missing evaluation start")
     first = int(eligible[0])
     dates = bars.index
@@ -170,7 +180,9 @@ def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
     else:
         family = settings.rule.split("_")[0]
         enter = features[f"{family}_entry"].to_numpy()
-    exit_signal = features.get(f"{settings.rule}_exit", pd.Series(False, index=dates)).to_numpy()
+    exit_signal = features.get(
+        f"{settings.rule}_exit", pd.Series(False, index=dates)
+    ).to_numpy()
     fee = settings.cost_bps * settings.cost_multiplier / 10000
     cash, quantity = float(settings.capital), 0.0
     stop, high_water, sessions = float("nan"), 0.0, 0
@@ -188,7 +200,13 @@ def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
             cash, quantity = 0.0, 0.0
             equity.append(0.0)
             positions.append(
-                {"date": day, "quantity": 0.0, "cash": 0.0, "funding": funding, "exposure": 0.0}
+                {
+                    "date": day,
+                    "quantity": 0.0,
+                    "cash": 0.0,
+                    "funding": funding,
+                    "exposure": 0.0,
+                }
             )
             continue
         # Spread stress multiplies observed opening spread, never future close spread.
@@ -276,10 +294,19 @@ def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
             }
         )
     return SwingResult(
-        pd.Series(equity, index=dates[first - 1 :], name="strategy").rename_axis("date"),
+        pd.Series(equity, index=dates[first - 1 :], name="strategy").rename_axis(
+            "date"
+        ),
         pd.DataFrame(
             ledger,
-            columns=["date", "reason", "quantity_change", "fill", "commission", "spread_cost"],
+            columns=[
+                "date",
+                "reason",
+                "quantity_change",
+                "fill",
+                "commission",
+                "spread_cost",
+            ],
         ).astype(
             {
                 "date": "datetime64[ns]",

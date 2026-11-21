@@ -43,7 +43,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 import pandas as pd
-import ta
 
 from fwbg_sdk import (
     BaseIndicator,
@@ -57,6 +56,7 @@ from fwbg_sdk.retest import (
     compute_break_state,
     compute_retest_signals,
 )
+from fwbg.utils.indicator_math import wilder_atr
 
 
 # ── Naming helpers ──────────────────────────────────────────────────────────
@@ -110,8 +110,8 @@ ORB_STRUCTURAL_SUFFIXES = ("_sl_dist", "_or_high", "_or_low", "_or_midpoint", "_
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
-    """ATR via ta-lib, returns raw ATR (not percent)."""
-    return ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=period)
+    """Wilder ATR, NaN until a full window exists (raw price, not percent)."""
+    return wilder_atr(df["H"], df["L"], df["C"], window=period)
 
 
 def _median_step_ns(index: pd.DatetimeIndex) -> int:
@@ -290,6 +290,9 @@ def _session_orb_features(
         effective_min: Optional[np.ndarray] = np.maximum(
             min_range_height, atr_min
         ) + np.zeros(n)
+        # Unknown ATR (warm-up) means the ATR floor cannot be checked: the range
+        # is not valid, instead of passing a NaN comparison.
+        effective_min = np.where(np.isnan(effective_min), np.inf, effective_min)
     else:
         effective_min = None
 
@@ -595,7 +598,7 @@ class OpeningRangeIndicator(BaseIndicator):
     """
 
     name = "opening_range"
-    version = "1.1.0"
+    version = "1.2.0"
     benefits_from_stationary = False
     group = "session"
 
@@ -816,6 +819,15 @@ class OpeningRangeIndicator(BaseIndicator):
                             cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"))
                             cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}sl_dist"))
         return cols
+
+    def get_unshifted_columns(self, params=None) -> List[str]:
+        """Signal columns plus the structural levels, which are not shifted either."""
+        structural = [
+            c
+            for c in self.get_feature_columns(params)
+            if c.endswith(ORB_STRUCTURAL_SUFFIXES)
+        ]
+        return list(dict.fromkeys(super().get_unshifted_columns(params) + structural))
 
     def get_signal_columns(self, params=None) -> List[str]:
         if self._signal_columns and not params:
