@@ -33,7 +33,7 @@ Base indicator that turns rule-based signal definitions (loaded from JSON files 
 - AC-007: A rule with an empty 'conditions' list produces an all-0.0 output column.
 - AC-008: Generated feature columns are passed through shift_features before being concatenated onto df, so signal values at bar i are derived from data available at bar i-1 (no lookahead).
 - AC-009: If self._rules is empty (e.g., the base class), compute() returns the input DataFrame unchanged.
-- AC-010: get_feature_columns() and get_signal_columns() both return the list of rule['output'] names in rule order.
+- AC-010: get_feature_columns() returns the list of rule['output'] names in rule order; get_signal_columns() returns an empty list (the outputs are shifted).
 - AC-011: get_default_params() and get_param_schema() return empty dicts — the plugin exposes no user-tunable parameters.
 
 ## Edge Cases
@@ -43,7 +43,7 @@ Base indicator that turns rule-based signal definitions (loaded from JSON files 
 - OR rule referencing a column that is not present in df → that condition is skipped without error; the rule can still fire on other conditions.
 - Unsupported comparison operator (not in _OPS and not 'crosses_above'/'crosses_below') → _eval_condition raises ValueError('Unsupported operator: ...').
 - First bar of a 'crosses_above'/'crosses_below' condition: prev = series.shift(1) is NaN, so the crossing comparison evaluates to False for that bar.
-- self._rules is empty (base class or a JSON definition with no rules) → compute() returns df unchanged, and get_feature_columns()/get_signal_columns() return [].
+- self._rules is empty (base class or a JSON definition with no rules) → compute() returns df unchanged, and get_feature_columns() returns [].
 
 ## Assumptions
 

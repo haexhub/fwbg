@@ -156,9 +156,6 @@ class ComputedSignalPlugin(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return [r["output"] for r in self._rules]
 
-    def get_signal_columns(self) -> List[str]:
-        return [r["output"] for r in self._rules]
-
     @classmethod
     def get_default_params(cls) -> Dict[str, Any]:
         return {}

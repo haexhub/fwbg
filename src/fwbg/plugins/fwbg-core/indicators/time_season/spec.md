@@ -69,7 +69,7 @@ Indicator that emits intraday, weekly, monthly, quarterly, and yearly time featu
 - AC-008: include_seasonality gates the season_* columns; within it, include_raw controls the integer season columns and include_encoded controls the sin/cos season columns.
 - AC-009: Calendar features: time_month_start = trading day of month in 1..month_edge_days, time_month_end = fewer than month_edge_days trading days left in the month, time_quarter_end = time_month_end & (month in {3,6,9,12}), so every month's last trading day is flagged; time_week_start = (dayofweek == 0), time_week_end = (dayofweek == 4), each cast to int.
 - AC-010: time_year_progress = dayofyear / (365 + is_leap_year), yielding values in (0, 1].
-- AC-011: get_feature_columns(params) returns the list of columns compute would emit for those params; get_signal_columns(params) returns the subset consisting of session (+ overlap) columns, time_trading_day (if enabled), and calendar columns.
+- AC-011: get_feature_columns(params) returns the list of columns compute would emit for those params; get_signal_columns(params) returns the subset consisting of session (+ overlap) columns, time_trading_day (if enabled), and calendar columns; get_calendar_columns(params) returns the same subset (the flags follow the timestamp alone, so they stay in the ML feature pool).
 
 ## Edge Cases
 

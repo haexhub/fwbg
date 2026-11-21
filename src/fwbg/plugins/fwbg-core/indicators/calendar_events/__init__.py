@@ -183,6 +183,9 @@ class CalendarEventsIndicator(BaseIndicator):
             "cal_year_boundary",
         ]
 
+    def get_calendar_columns(self) -> List[str]:
+        return self.get_signal_columns()
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

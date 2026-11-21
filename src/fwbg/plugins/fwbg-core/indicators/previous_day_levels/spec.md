@@ -74,7 +74,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - AC-018: When resample_tf is set and candle_span='body', the PDH/PDL range is computed from resampled O/C rather than native bars.
 - AC-019: Breakout thresholds combine multiplicatively and absolutely via offset = max(breakout_threshold * range, breakout_threshold_abs).
 - AC-020: Features are shifted by one bar via shift_features before being concatenated into the returned DataFrame (no lookahead).
-- AC-021: get_feature_columns and get_signal_columns return the exact set of columns produced by compute for the given params (via _default_fallback_columns when not yet computed).
+- AC-021: get_feature_columns returns the exact set of columns produced by compute for the given params (via _default_fallback_columns when not yet computed); get_signal_columns returns an empty list (every column is shifted).
 
 ## Edge Cases
 
@@ -86,7 +86,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - A retest never fires on the breakout bar itself (and min_retracement tracking starts after it): the first eligible retest bar is the bar after the break.
 - session_start_hour / session_end_hour are fixed UTC hours with no time zone conversion; a 17:00 New York day boundary is 22:00 UTC in winter and 21:00 UTC in summer.
 - resample_tf with body range: in session scope only in-session bars enter a resample bin, and bins are aligned to the trading-day boundary (midnight, or session_start_hour for sessions crossing midnight).
-- enable_retest=False: get_feature_columns()/get_signal_columns() omit the retest columns, matching what compute() emits.
+- enable_retest=False: get_feature_columns() omits the retest columns, matching what compute() emits.
 - |PDH - PDL| <= EPSILON: pdl_position is NaN for those bars (safe_range = NaN).
 - range_scope contains an unknown value: raises ValueError listing invalid entries.
 - Multiple retracement_levels supplied: each generates its own rl{N}_-prefixed retest/SL columns.

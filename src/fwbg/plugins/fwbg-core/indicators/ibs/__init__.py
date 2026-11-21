@@ -12,6 +12,7 @@ that close, e.g. ``entry_delay=0``; the first bar has no previous bar and is NaN
 - ``ibs_above_prev_high``: 1 when the close is above the previous bar's high,
   a rebound exit for the ``signal_exit`` exit strategy
 """
+
 from typing import List
 
 import numpy as np
@@ -45,7 +46,10 @@ class IbsIndicator(BaseIndicator):
         return list(IBS_COLUMNS)
 
     def get_signal_columns(self, params=None) -> List[str]:
-        return ["ibs_down", "ibs_above_prev_high"]
+        return list(IBS_COLUMNS)
+
+    def get_continuous_signal_columns(self, params=None) -> List[str]:
+        return ["ibs"]
 
     @classmethod
     def get_default_params(cls) -> dict:

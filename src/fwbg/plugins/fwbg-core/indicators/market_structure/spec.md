@@ -46,7 +46,7 @@ ICT/SMC-style market-structure indicator, implemented as a Donchian-channel prox
 - AC-007: ms_swing_high_dist and ms_swing_low_dist are non-negative ATR-normalised distances (clamped at 0) to the prior-bar rolling swing high/low.
 - AC-008: ms_choch_recency is 0 before the first CHOCH, then decays linearly from 1.0 at the CHOCH bar to 0.0 at choch_lookback bars later and stays at 0 thereafter.
 - AC-009: All feature columns are shifted by one bar via shift_features before being returned, so bar i's features depend only on data up to bar i-1.
-- AC-010: get_feature_columns() returns the 10 _FEATURES; get_signal_columns() returns ['ms_bos_bull', 'ms_bos_bear', 'ms_choch_bull', 'ms_choch_bear'].
+- AC-010: get_feature_columns() returns the 10 _FEATURES; get_signal_columns() returns an empty list (the flags are shifted).
 - AC-011: get_default_params() returns {'swing_lookback': 20, 'choch_lookback': 50, 'atr_period': 14}.
 
 ## Edge Cases

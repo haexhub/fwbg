@@ -37,7 +37,7 @@ Runs a symmetric CUSUM filter over log returns of the close price, using a rolli
 - AC-005: Sets cusum_pos_event=1 on positive breaks and cusum_neg_event=1 on negative breaks; cusum_intensity records the overshoot ratio |accumulator| / h at the firing bar.
 - AC-006: Emits cusum_pos_value = s_pos / h and cusum_neg_value = s_neg / -h (sign-flipped to a 0..1 scale), with 0 substituted where h <= 0.
 - AC-007: Emits cusum_bars_since as (i - last_event_bar) / lookback, remaining 0 until the first event fires.
-- AC-008: Returns exactly the six feature columns listed in `_FEATURES` via get_feature_columns(), and reports ['cusum_pos_event', 'cusum_neg_event'] as signal columns.
+- AC-008: Returns exactly the six feature columns listed in `_FEATURES` via get_feature_columns(), and reports no signal columns (the event flags are shifted).
 - AC-009: Applies shift_features to all six features so no output at bar i depends on data from bar i or later, then concatenates them onto the input DataFrame preserving its index.
 
 ## Edge Cases

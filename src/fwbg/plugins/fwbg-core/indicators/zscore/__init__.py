@@ -17,6 +17,7 @@ under one set of signal rules:
 - ``zscore_entry_long`` / ``zscore_entry_short``: 1 when z < -entry_z / z > entry_z
 - ``zscore_exit_long`` / ``zscore_exit_short``: 1 when z >= 0 / z <= 0
 """
+
 from typing import List, Optional
 
 import numpy as np
@@ -35,22 +36,37 @@ def _lookbacks(value) -> List[int]:
     return out
 
 
-ENTRY_COLUMNS = ["zscore_entry_long", "zscore_entry_short", "zscore_exit_long", "zscore_exit_short"]
+ENTRY_COLUMNS = [
+    "zscore_entry_long",
+    "zscore_entry_short",
+    "zscore_exit_long",
+    "zscore_exit_short",
+]
 
 
 def _entry_z(value, lookbacks: List[int]) -> Optional[float]:
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)) \
-            or not np.isfinite(value) or value <= 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float, np.integer, np.floating))
+        or not np.isfinite(value)
+        or value <= 0
+    ):
         raise ValueError(f"zscore: entry_z must be a positive number, not {value!r}")
     if len(lookbacks) != 1:
-        raise ValueError(f"zscore: entry_z needs exactly one lookback, not {lookbacks!r}")
+        raise ValueError(
+            f"zscore: entry_z needs exactly one lookback, not {lookbacks!r}"
+        )
     return float(value)
 
 
 def _columns(lookbacks: List[int], entry_z=None) -> List[str]:
-    cols = [c for lb in lookbacks for c in (f"zscore_{lb}", f"zscore_{lb}_above_mean", f"zscore_{lb}_below_mean")]
+    cols = [
+        c
+        for lb in lookbacks
+        for c in (f"zscore_{lb}", f"zscore_{lb}_above_mean", f"zscore_{lb}_below_mean")
+    ]
     return cols + (ENTRY_COLUMNS if _entry_z(entry_z, lookbacks) is not None else [])
 
 
@@ -63,8 +79,14 @@ class ZscoreIndicator(BaseIndicator):
     group = "statistics"
     benefits_from_stationary = False
 
-    def compute(self, df: pd.DataFrame, lookbacks=(20,), use_log: bool = True, entry_z=None,
-                **params) -> pd.DataFrame:
+    def compute(
+        self,
+        df: pd.DataFrame,
+        lookbacks=(20,),
+        use_log: bool = True,
+        entry_z=None,
+        **params,
+    ) -> pd.DataFrame:
         x = np.log(df["C"].where(df["C"] > 0)) if use_log else df["C"]
         lbs = _lookbacks(lookbacks)
         threshold = _entry_z(entry_z, lbs)
@@ -76,18 +98,41 @@ class ZscoreIndicator(BaseIndicator):
             out[f"zscore_{lb}_above_mean"] = (z >= 0).astype(float).where(z.notna())
             out[f"zscore_{lb}_below_mean"] = (z <= 0).astype(float).where(z.notna())
             if threshold is not None:
-                out["zscore_entry_long"] = (z < -threshold).astype(float).where(z.notna())
-                out["zscore_entry_short"] = (z > threshold).astype(float).where(z.notna())
+                out["zscore_entry_long"] = (
+                    (z < -threshold).astype(float).where(z.notna())
+                )
+                out["zscore_entry_short"] = (
+                    (z > threshold).astype(float).where(z.notna())
+                )
                 out["zscore_exit_long"] = out[f"zscore_{lb}_above_mean"]
                 out["zscore_exit_short"] = out[f"zscore_{lb}_below_mean"]
         return pd.concat([df, pd.DataFrame(out, index=df.index)], axis=1)
 
     def get_feature_columns(self, params: Optional[dict] = None) -> List[str]:
         params = params or {}
-        return _columns(_lookbacks(params.get("lookbacks", [20])), params.get("entry_z"))
+        return _columns(
+            _lookbacks(params.get("lookbacks", [20])), params.get("entry_z")
+        )
 
     def get_signal_columns(self, params: Optional[dict] = None) -> List[str]:
-        return [c for c in self.get_feature_columns(params) if c.endswith("_mean") or c in ENTRY_COLUMNS]
+        return self.get_feature_columns(params)
+
+    def get_continuous_signal_columns(self, params: Optional[dict] = None) -> List[str]:
+        return [
+            col
+            for col in self.get_feature_columns(params)
+            if col.startswith("zscore_")
+            and not col.endswith(
+                (
+                    "_above_mean",
+                    "_below_mean",
+                    "_entry_long",
+                    "_entry_short",
+                    "_exit_long",
+                    "_exit_short",
+                )
+            )
+        ]
 
     @classmethod
     def get_default_params(cls) -> dict:
@@ -96,13 +141,25 @@ class ZscoreIndicator(BaseIndicator):
     @classmethod
     def get_param_schema(cls) -> dict:
         return {
-            "lookbacks": {"type": "list[int]", "default": [20], "min": 2, "max": 1000,
-                          "description": "Rolling windows (bars) for mean and standard deviation; one column set each"},
-            "use_log": {"type": "bool", "default": True,
-                        "description": "Use the log close (relative moves) instead of the close"},
-            "entry_z": {"type": "float", "default": None, "min": 0,
-                        "description": "Entry threshold in standard deviations; adds zscore_entry_*/zscore_exit_* "
-                                       "columns (needs exactly one lookback)"},
+            "lookbacks": {
+                "type": "list[int]",
+                "default": [20],
+                "min": 2,
+                "max": 1000,
+                "description": "Rolling windows (bars) for mean and standard deviation; one column set each",
+            },
+            "use_log": {
+                "type": "bool",
+                "default": True,
+                "description": "Use the log close (relative moves) instead of the close",
+            },
+            "entry_z": {
+                "type": "float",
+                "default": None,
+                "min": 0,
+                "description": "Entry threshold in standard deviations; adds zscore_entry_*/zscore_exit_* "
+                "columns (needs exactly one lookback)",
+            },
         }
 
 

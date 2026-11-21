@@ -209,14 +209,6 @@ class LiquiditySweepIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return [
-            "lsw_bull_active",
-            "lsw_bear_active",
-            "lsw_bull_in_zone",
-            "lsw_bear_in_zone",
-        ]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {
