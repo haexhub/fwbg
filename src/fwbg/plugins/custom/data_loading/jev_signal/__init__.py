@@ -24,10 +24,14 @@ class JevSignalLoader(BaseDataLoader):
         short_col = f"{provider}_is_short_win"
 
         long_values = (
-            ctx.df[long_col] if long_col in ctx.df.columns else pd.Series(0.0, index=ctx.df.index)
+            ctx.df[long_col]
+            if long_col in ctx.df.columns
+            else pd.Series(0.0, index=ctx.df.index)
         )
         short_values = (
-            ctx.df[short_col] if short_col in ctx.df.columns else pd.Series(0.0, index=ctx.df.index)
+            ctx.df[short_col]
+            if short_col in ctx.df.columns
+            else pd.Series(0.0, index=ctx.df.index)
         )
 
         features = {
