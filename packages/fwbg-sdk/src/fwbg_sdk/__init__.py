@@ -15,7 +15,13 @@ from fwbg_sdk.contexts import PipelineContext, AssetInfo
 from fwbg_sdk.enums import Timeframe, AssetClass, Symbol, Direction, SignalType
 
 # Plugin base classes
-from fwbg_sdk.indicators import BaseIndicator, shift_features, safe_divide, EPSILON, rl_tag
+from fwbg_sdk.indicators import (
+    BaseIndicator,
+    shift_features,
+    safe_divide,
+    EPSILON,
+    rl_tag,
+)
 from fwbg_sdk.preprocessors import BasePreprocessor
 from fwbg_sdk.feature_selectors import BaseFeatureSelector
 from fwbg_sdk.exit_strategies import BaseExitStrategy
@@ -25,7 +31,12 @@ from fwbg_sdk.risk_managers import BaseRiskManager
 from fwbg_sdk.data_loaders import BaseDataLoader
 
 # Model plugin
-from fwbg_sdk.models import BaseModel, TrainingContext, ModelProgressReporter
+from fwbg_sdk.models import (
+    BaseModel,
+    TrainingContext,
+    ModelProgressReporter,
+    UntrainableLabelsError,
+)
 
 # Documentation validation
 from fwbg_sdk.docs import DocsValidationResult, DocsViolation, validate_plugin_docs
@@ -85,6 +96,7 @@ __all__ = [
     "BaseDataLoader",
     "BaseModel",
     "TrainingContext",
+    "UntrainableLabelsError",
     "ModelProgressReporter",
     # Indicator helpers
     "shift_features",
