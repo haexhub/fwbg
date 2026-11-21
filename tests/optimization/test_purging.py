@@ -6,6 +6,7 @@ Testet:
 - Embargo-Gap in Fold-Erstellung (outer + inner folds)
 - Concurrent Label Counting und Sample Uniqueness Weights
 """
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -37,8 +38,12 @@ def _make_df(n_rows: int) -> pd.DataFrame:
     """Helper: DataFrame with OHLC columns."""
     rng = np.random.default_rng(42)
     return pd.DataFrame(
-        {"O": rng.standard_normal(n_rows), "H": rng.standard_normal(n_rows),
-         "L": rng.standard_normal(n_rows), "C": rng.standard_normal(n_rows)},
+        {
+            "O": rng.standard_normal(n_rows),
+            "H": rng.standard_normal(n_rows),
+            "L": rng.standard_normal(n_rows),
+            "C": rng.standard_normal(n_rows),
+        },
         index=pd.date_range("2020-01-01", periods=n_rows, freq="h"),
     )
 
@@ -46,7 +51,9 @@ def _make_df(n_rows: int) -> pd.DataFrame:
 class TestOuterFoldEmbargo:
     def test_embargo_gap(self):
         df = _make_df(50000)
-        folds = create_walk_forward_folds(df, n_folds=3, test_size=4000, embargo_bars=100)
+        folds = create_walk_forward_folds(
+            df, n_folds=3, test_size=4000, embargo_bars=100
+        )
         for fold in folds:
             assert fold.train_end + 100 <= fold.test_start
 
@@ -58,8 +65,12 @@ class TestOuterFoldEmbargo:
 
     def test_embargo_reduces_training_data(self):
         df = _make_df(50000)
-        folds_0 = create_walk_forward_folds(df, n_folds=3, test_size=4000, embargo_bars=0)
-        folds_100 = create_walk_forward_folds(df, n_folds=3, test_size=4000, embargo_bars=100)
+        folds_0 = create_walk_forward_folds(
+            df, n_folds=3, test_size=4000, embargo_bars=0
+        )
+        folds_100 = create_walk_forward_folds(
+            df, n_folds=3, test_size=4000, embargo_bars=100
+        )
         for f0, f100 in zip(folds_0, folds_100):
             assert len(f100.train_df) == len(f0.train_df) - 100
 
@@ -67,7 +78,9 @@ class TestOuterFoldEmbargo:
 class TestInnerFoldEmbargo:
     def test_inner_fold_embargo_gap(self):
         df = _make_df(30000)
-        result = nested_cv_split(df, holdout_ratio=0.0, n_inner_folds=3, embargo_bars=50)
+        result = nested_cv_split(
+            df, holdout_ratio=0.0, n_inner_folds=3, embargo_bars=50
+        )
         for train_df, val_df in result["inner_folds"]:
             train_end_pos = df.index.get_loc(train_df.index[-1])
             val_start_pos = df.index.get_loc(val_df.index[0])
@@ -85,6 +98,7 @@ class TestInnerFoldEmbargo:
 class TestComputeTargetsWithDurations:
     def test_returns_four_arrays(self):
         from fwbg.simulation.numba_core import compute_targets_numba
+
         n = 200
         rng = np.random.default_rng(42)
         prices = rng.standard_normal(n).cumsum() + 100
@@ -94,10 +108,16 @@ class TestComputeTargetsWithDurations:
         lows = np.minimum(opens, closes) - np.abs(rng.standard_normal(n) * 0.3)
 
         tgt_l, tgt_s, dur_l, dur_s = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 2.0), sl_distances=np.full(n, 1.0),
-            spread=0.5, slippage=0.25,
-            max_bars=50, timeout_bars=20,
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 2.0),
+            sl_distances=np.full(n, 1.0),
+            spread=0.5,
+            slippage=0.25,
+            max_bars=50,
+            timeout_bars=20,
         )
         assert tgt_l.shape == (n,)
         assert tgt_s.shape == (n,)
@@ -106,6 +126,7 @@ class TestComputeTargetsWithDurations:
 
     def test_durations_positive(self):
         from fwbg.simulation.numba_core import compute_targets_numba
+
         n = 200
         rng = np.random.default_rng(42)
         prices = rng.standard_normal(n).cumsum() + 100
@@ -115,10 +136,16 @@ class TestComputeTargetsWithDurations:
         lows = np.minimum(opens, closes) - np.abs(rng.standard_normal(n) * 0.3)
 
         _, _, dur_l, dur_s = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 2.0), sl_distances=np.full(n, 1.0),
-            spread=0.5, slippage=0.25,
-            max_bars=50, timeout_bars=20,
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 2.0),
+            sl_distances=np.full(n, 1.0),
+            spread=0.5,
+            slippage=0.25,
+            max_bars=50,
+            timeout_bars=20,
         )
         # All durations should be > 0 except last bar
         assert np.all(dur_l[:-1] > 0)
@@ -130,6 +157,7 @@ class TestComputeTargetsWithDurations:
     def test_consistent_with_compute_targets_numba(self):
         """compute_targets_numba returns 4 arrays (targets + durations)."""
         from fwbg.simulation.numba_core import compute_targets_numba
+
         n = 200
         rng = np.random.default_rng(42)
         prices = rng.standard_normal(n).cumsum() + 100
@@ -139,8 +167,16 @@ class TestComputeTargetsWithDurations:
         lows = np.minimum(opens, closes) - np.abs(rng.standard_normal(n) * 0.3)
 
         result = compute_targets_numba(
-            opens, closes, highs, lows,
-            np.full(n, 2.0), np.full(n, 1.0), 0.5, 0.25, 50, 20,
+            opens,
+            closes,
+            highs,
+            lows,
+            np.full(n, 2.0),
+            np.full(n, 1.0),
+            0.5,
+            0.25,
+            50,
+            20,
         )
         assert len(result) == 4
         for arr in result:
@@ -151,6 +187,7 @@ class TestConcurrentLabels:
     def test_no_overlap(self):
         """Duration=1 → kein Overlap → alle concurrent=1."""
         from fwbg.optimization.purging import compute_concurrent_labels
+
         n = 10
         durations = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 0], dtype=np.int64)
         concurrent = compute_concurrent_labels(n, durations)
@@ -160,6 +197,7 @@ class TestConcurrentLabels:
     def test_full_overlap(self):
         """Lange Durations → viel Overlap."""
         from fwbg.optimization.purging import compute_concurrent_labels
+
         n = 10
         durations = np.array([5, 5, 5, 5, 5, 5, 5, 5, 5, 0], dtype=np.int64)
         concurrent = compute_concurrent_labels(n, durations)
@@ -173,6 +211,7 @@ class TestSampleWeights:
     def test_sum_to_n(self):
         """Gewichte müssen auf n_samples normalisiert sein."""
         from fwbg.optimization.purging import compute_sample_weights
+
         n = 100
         dur_l = np.full(n, 10, dtype=np.int64)
         dur_s = np.full(n, 8, dtype=np.int64)
@@ -182,10 +221,11 @@ class TestSampleWeights:
     def test_unique_higher_weight(self):
         """Samples mit wenig Overlap bekommen höheres Gewicht."""
         from fwbg.optimization.purging import compute_sample_weights
+
         n = 20
         dur_l = np.zeros(n, dtype=np.int64)
-        dur_l[:10] = 2    # kurze Trades → wenig Overlap
-        dur_l[10:] = 10   # lange Trades → viel Overlap
+        dur_l[:10] = 2  # kurze Trades → wenig Overlap
+        dur_l[10:] = 10  # lange Trades → viel Overlap
         dur_s = np.zeros(n, dtype=np.int64)
         weights = compute_sample_weights(dur_l, dur_s, n)
         assert weights[:10].mean() > weights[10:].mean()
@@ -193,6 +233,7 @@ class TestSampleWeights:
     def test_zero_durations(self):
         """Bei Duration=0 überall → uniform Gewichte."""
         from fwbg.optimization.purging import compute_sample_weights
+
         n = 50
         dur_l = np.zeros(n, dtype=np.int64)
         dur_s = np.zeros(n, dtype=np.int64)
@@ -217,16 +258,24 @@ class TestComputeTargetsCachedDurations:
         n = 500
         rng = np.random.default_rng(42)
         prices = rng.standard_normal(n).cumsum() + 1.1
-        df = pd.DataFrame({
-            "O": prices,
-            "C": prices + rng.standard_normal(n) * 0.001,
-            "H": prices + np.abs(rng.standard_normal(n) * 0.002),
-            "L": prices - np.abs(rng.standard_normal(n) * 0.002),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": prices,
+                "C": prices + rng.standard_normal(n) * 0.001,
+                "H": prices + np.abs(rng.standard_normal(n) * 0.002),
+                "L": prices - np.abs(rng.standard_normal(n) * 0.002),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         result = compute_targets_cached(
-            df, tp=20, sl=10, ctx=ctx, timeout_bars=48,
-            exit_strategy_mode="fixed", return_durations=True,
+            df,
+            tp=20,
+            sl=10,
+            ctx=ctx,
+            timeout_bars=48,
+            exit_strategy_mode="fixed",
+            return_durations=True,
         )
         assert len(result) == 4
         tgt_l, tgt_s, dur_l, dur_s = result
@@ -245,16 +294,24 @@ class TestComputeTargetsCachedDurations:
         n = 200
         rng = np.random.default_rng(42)
         prices = rng.standard_normal(n).cumsum() + 1.1
-        df = pd.DataFrame({
-            "O": prices,
-            "C": prices + rng.standard_normal(n) * 0.001,
-            "H": prices + np.abs(rng.standard_normal(n) * 0.002),
-            "L": prices - np.abs(rng.standard_normal(n) * 0.002),
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": prices,
+                "C": prices + rng.standard_normal(n) * 0.001,
+                "H": prices + np.abs(rng.standard_normal(n) * 0.002),
+                "L": prices - np.abs(rng.standard_normal(n) * 0.002),
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         result = compute_targets_cached(
-            df, tp=20, sl=10, ctx=ctx, timeout_bars=48,
-            exit_strategy_mode="fixed", return_durations=False,
+            df,
+            tp=20,
+            sl=10,
+            ctx=ctx,
+            timeout_bars=48,
+            exit_strategy_mode="fixed",
+            return_durations=False,
         )
         assert len(result) == 2
 
@@ -275,15 +332,21 @@ class TestTrainModelWithWeights:
 
         n = 200
         rng = np.random.default_rng(42)
-        df = pd.DataFrame({
-            "f1": rng.standard_normal(n),
-            "f2": rng.standard_normal(n),
-        })
+        df = pd.DataFrame(
+            {
+                "f1": rng.standard_normal(n),
+                "f2": rng.standard_normal(n),
+            }
+        )
         targets = (rng.random(n) > 0.5).astype(float)
         weights = rng.random(n) + 0.5  # positive weights
 
         model = train_model(
-            df, targets, ["f1", "f2"], min_trades=10, ctx=ctx,
+            df,
+            targets,
+            ["f1", "f2"],
+            min_trades=10,
+            ctx=ctx,
             sample_weight=weights,
         )
         assert model is not None
@@ -301,10 +364,12 @@ class TestTrainModelWithWeights:
 
         n = 200
         rng = np.random.default_rng(42)
-        df = pd.DataFrame({
-            "f1": rng.standard_normal(n),
-            "f2": rng.standard_normal(n),
-        })
+        df = pd.DataFrame(
+            {
+                "f1": rng.standard_normal(n),
+                "f2": rng.standard_normal(n),
+            }
+        )
         targets = (rng.random(n) > 0.5).astype(float)
 
         model = train_model(df, targets, ["f1", "f2"], min_trades=10, ctx=ctx)
