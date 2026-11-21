@@ -610,12 +610,12 @@ def compute_targets_numba(
             timeout_bars,
             entry_delay,
         )
-        if result_long == 1.0:
-            targets_long[i] = 1.0
-        elif nan_incomplete and _window_incomplete(
+        if nan_incomplete and _window_incomplete(
             i + 1, n, max_bars, timeout_bars, reason_long
         ):
             targets_long[i] = np.nan
+        elif result_long == 1.0:
+            targets_long[i] = 1.0
         durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
         result_short, exit_short, _, reason_short = _simulate_trade_numba(
@@ -633,12 +633,12 @@ def compute_targets_numba(
             timeout_bars,
             entry_delay,
         )
-        if result_short == 1.0:
-            targets_short[i] = 1.0
-        elif nan_incomplete and _window_incomplete(
+        if nan_incomplete and _window_incomplete(
             i + 1, n, max_bars, timeout_bars, reason_short
         ):
             targets_short[i] = np.nan
+        elif result_short == 1.0:
+            targets_short[i] = 1.0
         durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
     if nan_incomplete and n > 0:
