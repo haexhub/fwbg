@@ -101,7 +101,10 @@ def probe(name: str) -> dict:
     for row in ROWS:
         for move in (60.0, -60.0):
             moved = df.copy()
-            for col in ("O", "H", "L", "C"):
+            # Current-bar open-only inputs are already known when the bar starts
+            # (for example, session bands anchored on today's open). This probe
+            # detects decisions that depend on intrabar or closing prices.
+            for col in ("H", "L", "C"):
                 moved.iloc[row, moved.columns.get_loc(col)] += move
             out = plugin.compute(moved, **params)
             for col in new:
