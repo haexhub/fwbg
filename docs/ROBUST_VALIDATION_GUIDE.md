@@ -142,6 +142,11 @@ else:
     print("❌ NOT ROBUST")
 ```
 
+> **Hinweis:** Die Inner-CV trainiert Modelle mit reduzierten Hyperparametern
+> (xgboost: halbe `n_estimators`, mindestens 10), die äußeren Folds und der
+> Holdout mit den vollen. Das Holdout/Inner-Verhältnis vergleicht also zwei
+> unterschiedlich große Modelle; siehe `docs/phases/7-validation.md`.
+
 ### Was sind gute Werte?
 
 | Metrik | Robust | Grenzfall | Problematisch |

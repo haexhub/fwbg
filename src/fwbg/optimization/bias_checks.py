@@ -26,6 +26,10 @@ LOW_BIAS_WARNING = 0.7
 LOW_FOLD_RATIO = 0.25
 
 
+# The inner/outer ratios compare two different models; say so wherever they are shown.
+INNER_MODEL_NOTE = "inner CV trains reduced models, e.g. xgboost with half the trees"
+
+
 def fold_bias_ratios(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Test/inner PnL ratio per fold, defined only where the inner PnL is positive.
 
@@ -202,10 +206,12 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
             for issue in issues:
                 print(f"    - {issue}")
             print(f"    Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}")
+            print(f"    ({INNER_MODEL_NOTE})")
         elif warnings:
             print(f"{severity} {symbol}: Warnings")
             for warn in warnings:
                 print(f"    - {warn}")
+            print(f"    ({INNER_MODEL_NOTE})")
         else:
             std_text = "n/a" if std_wr is None else f"{std_wr * 100:.1f}%"
             mean_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"

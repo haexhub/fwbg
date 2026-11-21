@@ -16,6 +16,7 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
 
 from fwbg_sdk.models import BaseModel, TrainingContext, UntrainableLabelsError
+from fwbg.core.config import DEFAULT_RUN_SEED
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_feature_selector, get_model
 
@@ -181,12 +182,23 @@ def refit_stateful_features(
 # Seed handed to feature selectors that take one (boruta shadow features and trees,
 # stability-selection bootstraps). Without it they draw from the global RNG and the
 # selected features differ between identical runs. A plugin's own "seed" param wins.
-FEATURE_SELECTION_SEED = 42
+FEATURE_SELECTION_SEED = DEFAULT_RUN_SEED
 
 
 def _accepts_seed(selector: Any) -> bool:
     """Whether the selector's select_features names a ``seed`` parameter."""
     return "seed" in inspect.signature(selector.select_features).parameters
+
+
+def fold_selection_seed(ctx: SimulationContext) -> Dict[str, Any]:
+    """Seed arguments of ``select_features_from_fold`` for a run.
+
+    Empty without a strategy seed, so the built-in seed and a plugin's own seed
+    param apply as before.
+    """
+    if ctx.seed is None:
+        return {}
+    return {"seed": ctx.seed, "force_seed": True}
 
 
 def select_features_from_fold(
@@ -196,6 +208,7 @@ def select_features_from_fold(
     min_trades: int,
     feature_selection_plugins: List[Dict] = None,
     seed: int = FEATURE_SELECTION_SEED,
+    force_seed: bool = False,
 ) -> Tuple[Optional[List[str]], Dict]:
     """
     Wählt Features über das Plugin-Interface aus.
@@ -211,6 +224,8 @@ def select_features_from_fold(
         feature_selection_plugins: Liste von Plugin-Configs
             [{"name": "boruta", "params": {"min_z_score": 0.5}}, ...]
         seed: RNG-Seed für Selektoren mit ``seed``-Parameter (Plugin-Param hat Vorrang)
+        force_seed: True, wenn der Seed aus der Strategie (``seed``) stammt: er
+            überschreibt dann auch den Plugin-Param
 
     Returns:
         (selected_features, metadata) oder (None, {})
@@ -244,7 +259,10 @@ def select_features_from_fold(
 
         max_features = params.pop("max_features", None)
         if _accepts_seed(selector):
-            params.setdefault("seed", seed)
+            if force_seed:
+                params["seed"] = seed
+            else:
+                params.setdefault("seed", seed)
         try:
             selected, meta = selector.select_features(
                 train_df[selected], targets, max_features=max_features, **params
@@ -262,6 +280,14 @@ def select_features_from_fold(
         metadata.update(meta)
 
     return selected, metadata
+
+
+def _seeded_hyperparameters(ctx: SimulationContext) -> Dict[str, Any]:
+    """The context's model hyperparameters; the strategy seed, if set, is the random_state."""
+    params = ctx.model_hyperparameters.copy()
+    if ctx.seed is not None:
+        params["random_state"] = ctx.seed
+    return params
 
 
 def train_model(
@@ -297,7 +323,7 @@ def train_model(
         return None
 
     model_class = get_model(ctx.model_type)
-    params = ctx.model_hyperparameters.copy()
+    params = _seeded_hyperparameters(ctx)
 
     if use_reduced_params:
         params = model_class.get_reduced_hyperparameters(params)
@@ -375,9 +401,7 @@ def _generate_oof_predictions(
         if len(np.unique(targets[train_idx])) < 2:
             continue
 
-        params = model_class.get_reduced_hyperparameters(
-            ctx.model_hyperparameters.copy()
-        )
+        params = model_class.get_reduced_hyperparameters(_seeded_hyperparameters(ctx))
         model = model_class()
         training_context = TrainingContext()
         model.train(
@@ -548,7 +572,7 @@ def _train_meta_model(
     )
 
     model_class = get_model(ctx.model_type)
-    params = model_class.get_reduced_hyperparameters(ctx.model_hyperparameters.copy())
+    params = model_class.get_reduced_hyperparameters(_seeded_hyperparameters(ctx))
     meta_model = model_class()
     training_context = TrainingContext()
     meta_model.train(X_meta, available_targets, training_context, **params)
@@ -652,6 +676,7 @@ def _evaluate_single_fold(
                 group_features,
                 ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
+                **fold_selection_seed(ctx),
             )
         if has_short:
             feat_short, _ = select_features_from_fold(
@@ -660,6 +685,7 @@ def _evaluate_single_fold(
                 group_features,
                 ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
+                **fold_selection_seed(ctx),
             )
 
     if not feat_long and not feat_short:

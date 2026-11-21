@@ -350,6 +350,15 @@ print(f"{passed} passed, {failed} failed")
 
 ---
 
+## Remote Registration (`POST /api/plugins`)
+
+The API can register a plugin over HTTP, but this executes the uploaded Python
+in the API process, so it is disabled (403) unless the server sets
+`FWBG_ALLOW_PLUGIN_UPLOAD=1`. The default is off, including in
+`docker-compose.yml`. See [Deployment](deployment.md#plugin-upload).
+
+---
+
 ## Entry-Point Registration (pip-installable packages)
 
 For plugin packages installed via `pip install`, an entry point must be defined in `pyproject.toml`:

@@ -275,6 +275,9 @@ fwbg/
 
 ## Documentation
 
+### Operations
+- [Deployment](docs/deployment.md) — Container user, volume ownership, plugin upload flag
+
 ### Architecture & Plugin System
 - [Architecture & Plugin System](docs/architecture.md) — Plugin lifecycle, discovery, naming, PipelineRunner
 - [Plugin Development Guide](docs/plugin-development.md) — Creating custom plugins

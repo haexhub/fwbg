@@ -32,14 +32,27 @@ RUN pip install --no-cache-dir \
       -e packages/fwbg-broker-ig \
       -e ".[ig,api]"
 
-# Verzeichnisse für Volumes erstellen (damit Berechtigungen stimmen)
-RUN mkdir -p accounts data logs stats_export strategies
+# Unprivilegierter Benutzer mit fester UID/GID (Volumes muessen dieser UID
+# gehoeren, siehe docs/deployment.md).
+RUN groupadd --gid 10001 fwbg \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/fwbg \
+       --shell /usr/sbin/nologin fwbg
 
-# Security note: the container runs as root. The compose file mounts named
-# volumes at /root/fwbg and /root/.fwbg/plugins (root-owned, populated by earlier
-# deployments) and bind-mounts the host's research register at /root/fwbg/research;
-# switching to an unprivileged user would require chown-ing those volumes and
-# moving the paths, so it is a deliberate migration, not a default.
+# Verzeichnisse für Volumes erstellen (damit Berechtigungen stimmen). Ein
+# leeres Named Volume uebernimmt Eigentuemer und Rechte des Image-Verzeichnisses
+# beim ersten Mount; deshalb gehoeren alle Mountpunkte dem Benutzer fwbg.
+# /home/fwbg/fwbg ist der Workspace, /home/fwbg/.fwbg/plugins das Plugin-Volume.
+RUN mkdir -p accounts data/stats_export logs stats_export strategies \
+      /home/fwbg/fwbg /home/fwbg/.fwbg/plugins \
+    && chown fwbg:fwbg /app \
+    && chown -R fwbg:fwbg accounts data logs stats_export strategies /home/fwbg
+
+# Das Research-Register ist ein Bind-Mount vom Host und gehoert dort einem
+# anderen Benutzer; ohne safe.directory verweigert git die Arbeit darin.
+RUN git config --system --add safe.directory /home/fwbg/fwbg/research
+
+ENV HOME=/home/fwbg
+USER fwbg:fwbg
 
 # API Port
 EXPOSE 8420

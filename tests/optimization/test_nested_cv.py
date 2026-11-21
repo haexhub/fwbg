@@ -73,6 +73,7 @@ def create_mock_context(
     """Erstellt einen Mock-SimulationContext."""
     ctx = Mock(spec=SimulationContext)
     ctx.symbol = symbol
+    ctx.seed = None  # no strategy seed; a bare Mock attribute would be a Mock
     ctx.spread = spread
     ctx.long_enabled = long_enabled
     ctx.short_enabled = short_enabled
@@ -906,6 +907,7 @@ def test_inner_cv_models_use_reduced_hyperparameters_and_outer_ones_do_not(monke
         model_type="x",
         model_hyperparameters={"n_estimators": 200},
         probability_calibration=False,
+        seed=None,
     )
     df = pd.DataFrame({"a": np.arange(40.0)})
     targets = np.array([0, 1] * 20)

@@ -19,6 +19,7 @@ from fwbg.utils.logging import log
 from .nested_cv import (
     run_inner_cv,
     select_features_from_fold,
+    fold_selection_seed,
     _evaluate_single_fold,
     _aggregate_cv_folds,
     _compact_trades_by_ct,
@@ -118,6 +119,7 @@ def select_features(
                 features,
                 ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
+                **fold_selection_seed(ctx),
             )
             if selected_long:
                 log(
@@ -137,6 +139,7 @@ def select_features(
                 features,
                 ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
+                **fold_selection_seed(ctx),
             )
             if selected_short:
                 log(
