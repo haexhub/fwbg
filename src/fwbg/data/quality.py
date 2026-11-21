@@ -118,7 +118,9 @@ def assess_bars(
 
     requested_span = (requested_end - requested_start).total_seconds()
     coverage = (
-        (last_bar - first_bar).total_seconds() / requested_span if requested_span > 0 else 0.0
+        (last_bar - first_bar).total_seconds() / requested_span
+        if requested_span > 0
+        else 0.0
     )
     coverage = min(max(coverage, 0.0), 1.0)
 
@@ -166,7 +168,9 @@ def assess_bars(
     if duplicate_timestamps > 0:
         warnings.append(f"{duplicate_timestamps} duplicate timestamp(s)")
     if ohlc_violations > 0:
-        warnings.append(f"{ohlc_violations} OHLC violation(s) (L<=min(O,C)<=max(O,C)<=H broken)")
+        warnings.append(
+            f"{ohlc_violations} OHLC violation(s) (L<=min(O,C)<=max(O,C)<=H broken)"
+        )
     if nan_bars > 0:
         warnings.append(f"{nan_bars} bar(s) with non-finite OHLC")
 
