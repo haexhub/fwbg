@@ -24,18 +24,25 @@ def _bars(timestamps, o=1.0, h=1.0, l=1.0, c=1.0, v=100.0):
     n = len(timestamps)
 
     def _arr(x):
-        return np.full(n, x, dtype=float) if np.isscalar(x) else np.asarray(x, dtype=float)
+        return (
+            np.full(n, x, dtype=float) if np.isscalar(x) else np.asarray(x, dtype=float)
+        )
 
     idx = pd.DatetimeIndex(timestamps)
     return pd.DataFrame(
-        {"O": _arr(o), "H": _arr(h), "L": _arr(l), "C": _arr(c), "V": _arr(v)}, index=idx
+        {"O": _arr(o), "H": _arr(h), "L": _arr(l), "C": _arr(c), "V": _arr(v)},
+        index=idx,
     )
 
 
 def test_clean_hourly_week_has_no_warnings_and_full_coverage():
-    week1 = [_MONDAY + pd.Timedelta(hours=hr) for hr in range(0, 117)]  # Mon 00:00 .. Fri 20:00
+    week1 = [
+        _MONDAY + pd.Timedelta(hours=hr) for hr in range(0, 117)
+    ]  # Mon 00:00 .. Fri 20:00
     next_monday = _MONDAY + pd.Timedelta(days=7)
-    week2 = [next_monday + pd.Timedelta(hours=hr) for hr in range(0, 6)]  # Mon 00:00 .. 05:00
+    week2 = [
+        next_monday + pd.Timedelta(hours=hr) for hr in range(0, 6)
+    ]  # Mon 00:00 .. 05:00
     timestamps = week1 + week2
 
     df = _bars(timestamps)
@@ -55,7 +62,9 @@ def test_clean_hourly_week_has_no_warnings_and_full_coverage():
 def test_weekday_hole_is_flagged_as_a_gap():
     # Monday 00:00 .. Wednesday 08:00 hourly, a 5-hour hole, then a few more bars.
     part1 = [_MONDAY + pd.Timedelta(hours=hr) for hr in range(0, 57)]  # .. Wed 08:00
-    part2 = [_MONDAY + pd.Timedelta(hours=hr) for hr in range(61, 71)]  # resumes Wed 13:00
+    part2 = [
+        _MONDAY + pd.Timedelta(hours=hr) for hr in range(61, 71)
+    ]  # resumes Wed 13:00
     timestamps = part1 + part2
 
     df = _bars(timestamps)
