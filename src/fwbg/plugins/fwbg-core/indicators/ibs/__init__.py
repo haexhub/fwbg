@@ -48,6 +48,9 @@ class IbsIndicator(BaseIndicator):
     def get_signal_columns(self, params=None) -> List[str]:
         return list(IBS_COLUMNS)
 
+    def get_continuous_signal_columns(self, params=None) -> List[str]:
+        return ["ibs"]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {}
