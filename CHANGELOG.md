@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.1](https://github.com/haexhub/fwbg/compare/v3.0.0...v3.0.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **deps:** keep Dukascopy updates within supported versions ([dcdad38](https://github.com/haexhub/fwbg/commit/dcdad385fbe72bac93a5c8b1cd73070c126ca096))
+* **deps:** keep Dukascopy updates within supported versions ([add80a2](https://github.com/haexhub/fwbg/commit/add80a27752cd3484603703227f101b8662f7522))
+* **docker:** build on python:3.14-slim until numpy has 3.15 wheels ([5b9a7f1](https://github.com/haexhub/fwbg/commit/5b9a7f1d472d22dca0a5ca8f0cbe25a6ed30485d))
+* **docker:** build on python:3.14-slim until numpy has 3.15 wheels ([b9e33fa](https://github.com/haexhub/fwbg/commit/b9e33faeb2217d248aa929cc97f087b88be4320b))
+* **lock:** sync fwbg package version to 3.0.0 ([49319dd](https://github.com/haexhub/fwbg/commit/49319dd35a56224acc8d98ea9431ab979e0dfb95))
+
 ## [3.0.0](https://github.com/haexhub/fwbg/compare/v2.21.0...v3.0.0) (2026-11-21)
 
 
