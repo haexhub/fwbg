@@ -1,8 +1,12 @@
 """Feature utilities for the pipeline system."""
 
-from typing import List, Optional
+import inspect
+import logging
+from typing import Iterable, List, Optional
 import numpy as np
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 
 def normalize_plugin_name(name: str) -> str:
@@ -78,6 +82,110 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     """
     exclude = {"O", "H", "L", "C", "V", "Volume"}
     return [c for c in df.columns if c not in exclude and not c.startswith("_")]
+
+
+def _indicator_name_params(indicator) -> tuple:
+    """(name, params) of a pipeline indicator entry (plugin name or config dict)."""
+    if isinstance(indicator, dict):
+        return indicator.get("name", ""), indicator.get("params") or {}
+    return indicator, {}
+
+
+def _column_names(method, params: dict) -> List[str]:
+    """Call a plugin's column method with *params* when it accepts them."""
+    try:
+        takes_params = len(inspect.signature(method).parameters) > 0
+    except (TypeError, ValueError):
+        takes_params = False
+    return list(method(params) if takes_params else method())
+
+
+def indicator_signal_columns(
+    name: str, params: Optional[dict] = None, *, include_calendar: bool = False
+) -> List[str]:
+    """Unshifted decision columns a configured indicator declares.
+
+    These are the columns of ``get_signal_columns(params)``: row ``i`` describes
+    the decision at bar ``i``'s close, so as model features they would run one bar
+    ahead of the 1-bar convention. Columns that are known before the bar opens
+    (``get_calendar_columns``) are left out unless *include_calendar* is set.
+    """
+    if not name:
+        return []
+    from fwbg.pipeline import get_registry
+
+    registry = get_registry()
+    registry.auto_discover()
+    plugin = registry.get(normalize_plugin_name(name))()
+    params = params or {}
+    if not hasattr(plugin, "get_signal_columns"):
+        return []
+    columns = _column_names(plugin.get_signal_columns, params)
+    if include_calendar or not hasattr(plugin, "get_calendar_columns"):
+        return columns
+    known_ahead = set(_column_names(plugin.get_calendar_columns, params))
+    return [c for c in columns if c not in known_ahead]
+
+
+def configured_signal_columns(indicators: Optional[Iterable]) -> List[str]:
+    """Unshifted decision columns of every configured indicator, without duplicates."""
+    found: dict = {}
+    for indicator in indicators or []:
+        name, params = _indicator_name_params(indicator)
+        for col in indicator_signal_columns(name, params):
+            found.setdefault(col, None)
+    return list(found)
+
+
+def ml_feature_pool(
+    df: pd.DataFrame, indicators: Optional[Iterable] = None
+) -> List[str]:
+    """Columns of *df* a model may use as features.
+
+    ``get_feature_columns(df)`` minus the unshifted signal columns of *indicators*
+    (the strategy's configured indicators). Those columns carry bar ``i``'s own
+    close in row ``i``; they stay in the frame for entry rules and exits but are
+    not model inputs. ``signal_columns_as_features`` on an indicator offers their
+    shifted ``<col>_prev`` copies instead (see ``add_shifted_signal_columns``).
+    """
+    signal_columns = set(configured_signal_columns(indicators))
+    return [c for c in get_feature_columns(df) if c not in signal_columns]
+
+
+def add_shifted_signal_columns(df: pd.DataFrame, indicators: Iterable) -> pd.DataFrame:
+    """Add ``<col>_prev`` (``col.shift(1)``) for the signal columns of opted-in indicators.
+
+    Only indicators whose entry sets ``signal_columns_as_features: true`` are
+    touched. The copy follows the 1-bar convention (row ``i`` uses bars <= i-1),
+    so it may enter the model pool; the unshifted original never does.
+
+    Raises:
+        ValueError: A ``<col>_prev`` column already exists in *df*.
+    """
+    from fwbg.core.columns import SIGNAL_PREV_SUFFIX, signal_columns_as_features
+
+    copies = {}
+    for indicator in indicators:
+        if not signal_columns_as_features(indicator):
+            continue
+        name, params = _indicator_name_params(indicator)
+        columns = [c for c in indicator_signal_columns(name, params) if c in df.columns]
+        if not columns:
+            log.warning(
+                "%s=true on indicator '%s', which has no signal columns to copy",
+                "signal_columns_as_features",
+                name,
+            )
+        for col in columns:
+            prev = f"{col}{SIGNAL_PREV_SUFFIX}"
+            if prev in df.columns or prev in copies:
+                raise ValueError(
+                    f"cannot add shifted signal column '{prev}': the name is already in use"
+                )
+            copies[prev] = df[col].shift(1)
+    if not copies:
+        return df
+    return pd.concat([df, pd.DataFrame(copies, index=df.index)], axis=1)
 
 
 # Regime bitmask constants (like Linux file permissions)
@@ -240,7 +348,9 @@ def compute_indicator_pool(
     ctx = PipelineContext(df=df.copy(), symbol="", asset_class="FOREX")
     result = runner.run(ctx, phases=["indicators"])
 
-    return result.df
+    if indicators is None:
+        return result.df
+    return add_shifted_signal_columns(result.df, indicators)
 
 
 # =============================================================================
@@ -293,6 +403,10 @@ __all__ = [
     "REGIME_LONG",
     "REGIME_SHORT",
     "get_feature_columns",
+    "ml_feature_pool",
+    "indicator_signal_columns",
+    "configured_signal_columns",
+    "add_shifted_signal_columns",
     "compute_regime_bitmask",
     "compute_indicator_pool",
     "normalize_plugin_name",

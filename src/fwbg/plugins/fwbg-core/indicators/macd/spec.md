@@ -33,7 +33,7 @@ MACD momentum/trend indicator built on ta.trend.MACD over the close price. Emits
 
 - AC-001: compute() returns the original df concatenated with the six declared feature columns.
 - AC-002: get_feature_columns() returns exactly [macd_hist, macd_signal, macd_line, macd_above_zero, macd_dist_zero, macd_hist_flip].
-- AC-003: get_signal_columns() returns [macd_above_zero, macd_hist_flip]; get_overlay_columns() returns [].
+- AC-003: get_signal_columns() returns [] (the discrete columns are shifted); get_overlay_columns() returns [].
 - AC-004: MACD/signal/histogram are computed via ta.trend.MACD using the provided fast_period, slow_period and signal_period.
 - AC-005: macd_line, macd_signal, macd_hist and macd_dist_zero are normalized by dividing by df['C'] using safe_divide.
 - AC-006: macd_above_zero equals np.sign of the raw (pre-normalization) MACD line.

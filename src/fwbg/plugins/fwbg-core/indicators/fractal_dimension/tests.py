@@ -373,10 +373,8 @@ class TestWindowsParamColumns:
             "fd_complexity_ratio_30",
             "fd_regime_30",
         ]
-        assert indicator.get_signal_columns({"windows": [30, 60]}) == [
-            "fd_regime_30",
-            "fd_regime_60",
-        ]
+        # fd_regime_* go through shift_features: not unshifted signal columns.
+        assert indicator.get_signal_columns({"windows": [30, 60]}) == []
 
     def test_columns_match_compute_for_custom_windows(self, indicator, random_walk_df):
         out = indicator.compute(random_walk_df, windows=[30, 60])

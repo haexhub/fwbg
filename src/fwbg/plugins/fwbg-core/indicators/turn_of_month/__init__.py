@@ -120,6 +120,10 @@ class TurnOfMonthIndicator(BaseIndicator):
         """Return the entry and exit signal column names."""
         return ["tom_entry_long", "tom_exit_long"]
 
+    def get_calendar_columns(self, params=None) -> List[str]:
+        """The entry/exit flags follow the exchange calendar alone."""
+        return self.get_signal_columns(params)
+
     @classmethod
     def get_default_params(cls) -> dict:
         """Return the default exchange calendar and turn-of-month window."""

@@ -44,7 +44,6 @@ NB_COLUMNS = [
     "nb_exit_long",
     "nb_exit_short",
 ]
-NB_SIGNAL_COLUMNS = ["nb_long", "nb_short", "nb_exit_long", "nb_exit_short"]
 
 
 def _minutes(hhmm: str) -> int:
@@ -231,7 +230,10 @@ class NoiseBoundaryIndicator(BaseIndicator):
         return list(NB_COLUMNS)
 
     def get_signal_columns(self, params=None) -> List[str]:
-        return list(NB_SIGNAL_COLUMNS)
+        return ["nb_vwap", "nb_long", "nb_short", "nb_exit_long", "nb_exit_short"]
+
+    def get_continuous_signal_columns(self, params=None) -> List[str]:
+        return ["nb_vwap"]
 
     @classmethod
     def get_default_params(cls) -> dict:

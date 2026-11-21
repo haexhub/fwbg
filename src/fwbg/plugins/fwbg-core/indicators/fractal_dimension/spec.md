@@ -25,7 +25,7 @@ Rolling Higuchi Fractal Dimension (HFD) indicator that measures price series com
 - fd_higuchi_{w} — raw Higuchi Fractal Dimension over rolling window w
 - fd_higuchi_change_{w} — difference of fd_higuchi_{w} versus w bars prior
 - fd_complexity_ratio_{w} — 2 * |fd_higuchi_{w} - 1.5|, i.e. deviation from the random-walk value
-- fd_regime_{w} — discrete regime in {-1 trending, 0 random, 1 mean-reverting} (also exposed as a signal column)
+- fd_regime_{w} — discrete regime in {-1 trending, 0 random, 1 mean-reverting} (shifted like every other feature, so not a signal column)
 
 ## Acceptance Criteria
 
@@ -35,7 +35,7 @@ Rolling Higuchi Fractal Dimension (HFD) indicator that measures price series com
 - AC-004: fd_higuchi_change_{w} equals fd_higuchi_{w} minus its value w bars earlier (pandas Series.diff(w)).
 - AC-005: fd_complexity_ratio_{w} equals 2.0 * |fd_higuchi_{w} - 1.5|.
 - AC-006: with band = regime_z * rw_fd_std(w, k_max), fd_regime_{w} equals -1.0 when fd_higuchi_{w} < 1.5 - band, 0.0 when 1.5 - band <= fd_higuchi_{w} <= 1.5 + band, 1.0 when fd_higuchi_{w} > 1.5 + band, and NaN when fd_higuchi_{w} is NaN. For a Gaussian random walk at w=50, k_max=10 the band is about +-0.25 and fewer than ~10% of windows leave it (a fixed 1.4..1.6 band flagged ~45%).
-- AC-007: get_signal_columns() returns the list of fd_regime_{w} columns, one per configured window. get_feature_columns(params) and get_signal_columns(params) honour a `windows` entry in params and fall back to the defaults.
+- AC-007: get_signal_columns() returns an empty list (every column is shifted). get_feature_columns(params) honours a `windows` entry in params and falls back to the defaults.
 - AC-008: The Higuchi computation uses the algorithm: for k in 1..k_max, build k sub-series indexed by strides of k, compute mean sub-series length L(k), then estimate D as the least-squares slope of log(L(k)) versus log(1/k).
 
 ## Edge Cases

@@ -299,6 +299,10 @@ class TimeSeasonIndicators(BaseIndicator):
 
         return cols
 
+    def get_calendar_columns(self, params=None) -> List[str]:
+        """The flags follow the bar's own timestamp alone."""
+        return self.get_signal_columns(params)
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

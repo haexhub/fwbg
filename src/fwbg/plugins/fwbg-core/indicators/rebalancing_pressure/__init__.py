@@ -127,6 +127,10 @@ class RebalancingPressureIndicator(BaseIndicator):
     def get_signal_columns(self, params=None) -> List[str]:
         return ["rebal_entry_long", "rebal_entry_short", "rebal_exit"]
 
+    def get_calendar_columns(self, params=None) -> List[str]:
+        """Known before the bar opens: the exchange calendar and inputs lagged ahead of the bar."""
+        return self.get_signal_columns(params)
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

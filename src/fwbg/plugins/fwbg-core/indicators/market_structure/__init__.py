@@ -181,9 +181,6 @@ class MarketStructureIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return ["ms_bos_bull", "ms_bos_bear", "ms_choch_bull", "ms_choch_bear"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

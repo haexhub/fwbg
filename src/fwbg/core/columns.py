@@ -18,6 +18,35 @@ EXIT_COLUMN_PARAMS = (
 )
 """exit_params keys that name a frame column an exit strategy reads."""
 
+SIGNAL_COLUMNS_AS_FEATURES_KEY = "signal_columns_as_features"
+"""Indicator config key: offer the indicator's signal columns to the ML pool as ``<col>_prev``."""
+
+SIGNAL_PREV_SUFFIX = "_prev"
+"""Suffix of the one-bar-shifted copy of a signal column."""
+
+
+def signal_columns_as_features(indicator) -> bool:
+    """Whether the pipeline indicator entry asks for shifted signal-column copies.
+
+    *indicator* is a pipeline entry (a plugin name or ``{"name": ..., "params": ...}``).
+    The flag must be a real boolean: a string such as ``"false"`` is truthy and
+    would silently switch the opt-in on.
+
+    Raises:
+        ValueError: The entry carries the key with a value that is not a boolean.
+    """
+    if not isinstance(indicator, dict):
+        return False
+    value = indicator.get(SIGNAL_COLUMNS_AS_FEATURES_KEY, False)
+    if not isinstance(value, bool):
+        name = indicator.get("name", "?")
+        raise ValueError(
+            f"pipeline indicator '{name}': {SIGNAL_COLUMNS_AS_FEATURES_KEY} must be "
+            f"true or false, not {value!r}"
+        )
+    return value
+
+
 _GLOB_CHARS = frozenset("*?[")
 _LISTED_CANDIDATES = 8
 
@@ -46,7 +75,9 @@ def named_columns(columns: Iterable[str], names: Iterable[str]) -> list[str]:
 def _warn_missing_name(param: str, name: str) -> None:
     """Once per process and name: the exits resolve their columns per combo and fold."""
     log.warning(
-        "exit_params.%s '%s' is not in the frame; falling back to auto-detection.", param, name
+        "exit_params.%s '%s' is not in the frame; falling back to auto-detection.",
+        param,
+        name,
     )
 
 
