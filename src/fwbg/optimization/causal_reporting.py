@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+from fwbg.core.config import DEFAULT_RUN_SEED
 from fwbg.simulation.equity import simulate_equity_timeline
 from fwbg.simulation.trade import (
     kelly_inputs,
@@ -135,10 +136,13 @@ def bootstrap_terminal_equity(
     }
 
 
-def monte_carlo_summary(pnl, returns) -> Dict[str, Any]:
-    """Sign-permutation test on *pnl* and a bootstrap of terminal equity on *returns*."""
-    mc_perm = monte_carlo_permutation_test(pnl, n_permutations=1000)
-    mc_equity = bootstrap_terminal_equity(returns, n_simulations=500)
+def monte_carlo_summary(pnl, returns, seed: int = DEFAULT_RUN_SEED) -> Dict[str, Any]:
+    """Sign-permutation test on *pnl* and a bootstrap of terminal equity on *returns*.
+
+    *seed* seeds both resamplings (default: the built-in run seed).
+    """
+    mc_perm = monte_carlo_permutation_test(pnl, n_permutations=1000, random_seed=seed)
+    mc_equity = bootstrap_terminal_equity(returns, n_simulations=500, random_seed=seed)
     return {
         "p_value": mc_perm["p_value"],
         "is_significant": mc_perm["is_significant"],

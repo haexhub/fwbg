@@ -1339,7 +1339,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_summary = monte_carlo_summary(reporting_pnl, reporting_returns)
+        mc_summary = monte_carlo_summary(
+            reporting_pnl, reporting_returns, seed=ctx.run_seed
+        )
 
         log(
             2,
@@ -1472,6 +1474,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "sharpe": sharpe,
             "calmar": calmar,
             "currencies": asset.currencies,
+            "seed": ctx.run_seed,
             "walk_forward": wf_summary,
             "monte_carlo": mc_summary,
             "reporting": reporting,

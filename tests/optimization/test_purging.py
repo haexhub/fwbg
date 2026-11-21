@@ -326,6 +326,7 @@ class TestTrainModelWithWeights:
         ctx = Mock()
         ctx.model_type = "xgboost"
         ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
+        ctx.seed = None
         ctx.min_trades = 10
         ctx.probability_calibration = False
         ctx.calibration_method = "isotonic"
@@ -358,6 +359,7 @@ class TestTrainModelWithWeights:
         ctx = Mock()
         ctx.model_type = "xgboost"
         ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
+        ctx.seed = None
         ctx.min_trades = 10
         ctx.probability_calibration = False
         ctx.calibration_method = "isotonic"

@@ -350,7 +350,7 @@ def test_a_crash_after_the_holdout_trades_exist_counts_as_evaluated(monkeypatch)
     patch_development(monkeypatch, WINNING)
     patch_holdout(monkeypatch)
 
-    def crash(pnl, returns):
+    def crash(pnl, returns, seed):
         raise RuntimeError("monte carlo exploded")
 
     monkeypatch.setattr(holdout, "monte_carlo_summary", crash)

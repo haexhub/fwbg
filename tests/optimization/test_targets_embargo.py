@@ -37,6 +37,7 @@ def _make_mock_ctx(
     """Mock context configured for fixed-exit strategy."""
     ctx = Mock(spec=SimulationContext)
     ctx.symbol = "TESTUSD"
+    ctx.seed = None  # no strategy seed; a bare Mock attribute would be a Mock
     ctx.spread = 0.0001
     ctx.long_enabled = True
     ctx.short_enabled = True
