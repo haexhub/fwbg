@@ -56,3 +56,12 @@ def test_last_bar_has_no_entry_and_is_nan():
 def test_default_keeps_the_zero_labels():
     long_, short, _, _ = _run([FLAT] * 6, 10, 10, max_bars=3, nan_incomplete=False)
     assert not np.isnan(long_).any() and not np.isnan(short).any()
+
+
+def test_a_cut_timeout_is_unknown_even_when_the_last_close_is_in_profit():
+    # The timeout (4 bars) of the signal on bar 3 would fire after the data ends;
+    # closing at the last bar's profitable 102 is not its outcome.
+    rows = [FLAT] * 4 + [(100.0, 101.5, 99.9, 101.0), (101.0, 102.5, 100.9, 102.0)]
+    long_, _, _, _ = _run(rows, 10, 10, max_bars=10, timeout_bars=4)
+    assert long_[0] == 1.0  # the timeout at bar 4 is reached: a settled win
+    assert np.isnan(long_[3])
