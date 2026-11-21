@@ -6,39 +6,11 @@ Enthält: RSI, Stochastic, Williams %R, Ultimate Oscillator, ROC.
 
 from typing import List
 
-import numpy as np
 import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features
-
-
-def _wilder_rsi(close: pd.Series, period: int) -> pd.Series:
-    """
-    Wilder's RSI.
-
-    The average gain and loss are seeded with the simple mean of the first
-    ``period`` price changes and then smoothed with alpha = 1 / period, so the
-    first value is at index ``period`` (``period + 1`` bars) and everything
-    before it is NaN. ``ta`` instead starts the average at an artificial zero
-    change on bar 0 and emits values from ``period - 1`` on.
-
-    With no movement at all (average gain and loss both 0, a flat series) the
-    RSI is 50: neither side dominates. Only gains give 100, only losses 0.
-    """
-    delta = close.diff()
-    averages = []
-    for part in (delta.clip(lower=0.0), (-delta).clip(lower=0.0)):
-        seeded = part.copy()
-        seeded.iloc[: period + 1] = np.nan
-        if len(part) > period:
-            seeded.iloc[period] = part.iloc[1 : period + 1].mean()
-        averages.append(seeded.ewm(alpha=1.0 / period, adjust=False).mean())
-    avg_gain, avg_loss = averages
-    rs = avg_gain / avg_loss.where(avg_loss > 0)
-    rsi = 100.0 - 100.0 / (1.0 + rs)
-    rsi = rsi.where(avg_loss > 0, np.where(avg_gain > 0, 100.0, 50.0))
-    return rsi.where(avg_gain.notna() & avg_loss.notna())
+from fwbg.utils.indicator_math import wilder_rsi
 
 
 @register_indicator("momentum")
@@ -92,7 +64,7 @@ class MomentumIndicators(BaseIndicator):
 
         # RSI
         for period in rsi_periods:
-            features[f"mom_rsi_{period}"] = _wilder_rsi(df["C"], period)
+            features[f"mom_rsi_{period}"] = wilder_rsi(df["C"], period)
 
         # Stochastic
         for period in stoch_periods:
