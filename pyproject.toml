@@ -52,7 +52,7 @@ dependencies = [
     "PyYAML>=6.0",
     "holidays>=0.70",
     # Keep this dependency on 4.x until the adapter supports Dukascopy 5.x.
-    "dukascopy-python>=4.0,<5",
+    "dukascopy-python>=4.0,<8",
     # HTTP client (scripts/jev provider client)
     "requests>=2.32",
 ]
