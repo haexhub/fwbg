@@ -1,6 +1,6 @@
 # Plugin Spec — pullback_momentum
 
-**Kind**: indicator  •  **Version**: 1.1.0
+**Kind**: indicator  •  **Version**: 1.2.0
 
 ## Capability
 
@@ -24,6 +24,7 @@ Three-step trend/pullback/momentum-break entry indicator. Uses an EMA trend filt
 - `local_high_lookback` (int, default=3): Bars to look back when identifying the local Lower High (long) or Higher Low (short) that price must break to trigger entry.
 - `sl_buffer_mult` (float, default=0.25): ATR multiplier added to the structural SL distance as a noise buffer below the pullback low (long) or above the pullback high (short).
 - `atr_period` (int, default=14): ATR lookback period used to compute the SL buffer.
+- `depth_reference` (choice, default=`broken_level`): top of the impulse range for the pullback depth (long; mirrored for short). `broken_level`: the broken swing high, so the close must fall back below the broken level to reach the depth. `impulse_peak`: the highest high since the BOS, the classic Fibonacci retracement of the impulse.
 
 ## Outputs
 
@@ -43,8 +44,8 @@ Three-step trend/pullback/momentum-break entry indicator. Uses an EMA trend filt
 - AC-002: All feature columns are shifted by one bar via shift_features before being returned (no lookahead).
 - AC-003: tpm_entry_long is 1 on bars where: the long state machine is in PULLBACK, current pullback fraction >= min_pullback_pct, close > EMA, and close breaks the max of highs over the prior local_high_lookback bars; 0 otherwise.
 - AC-004: tpm_entry_short is 1 on bars where: the short state machine is in PULLBACK, current pullback fraction >= min_pullback_pct, close < EMA, and close breaks the min of lows over the prior local_high_lookback bars; 0 otherwise.
-- AC-005: Long PULLBACK state is entered when close breaks the previous rolling swing_high AND close > EMA; the impulse top is set to that prior swing_high and the impulse base to the prior swing_low.
-- AC-006: Short PULLBACK state is entered when close breaks the previous rolling swing_low AND close < EMA; the impulse top is the prior swing_high and the impulse base is the prior swing_low.
+- AC-005: Long PULLBACK state is entered when close breaks the previous rolling swing_high AND close > EMA; the broken level is that prior swing_high and the impulse base the prior swing_low.
+- AC-006: Short PULLBACK state is entered when close breaks the previous rolling swing_low AND close < EMA; the impulse base is the prior swing_high and the broken level the prior swing_low.
 - AC-007: A long setup is invalidated (state reset to SCANNING) when close falls below the impulse swing low; a short setup is invalidated when close rises above the impulse swing high.
 - AC-008: While waiting for a pullback, a fresh BOS in the same direction refreshes the impulse levels and the running pullback extreme.
 - AC-009: tpm_sl_dist_long at an entry bar equals (close - running pullback low) + atr * sl_buffer_mult, floored to atr * 0.5 when non-positive; NaN otherwise. tpm_sl_dist_short is the mirror using (pullback high - close).
@@ -52,7 +53,10 @@ Three-step trend/pullback/momentum-break entry indicator. Uses an EMA trend filt
 - AC-011: tpm_in_pullback_long / tpm_in_pullback_short are 1 while the corresponding state machine is in PULLBACK and no entry fires on that bar, 0 otherwise (including on the entry bar itself).
 - AC-012: tpm_trend_ok_long is 1 iff EMA is valid and close > EMA; tpm_trend_ok_short is 1 iff EMA is valid and close < EMA.
 - AC-013: Rolling swing extremes use only past bars (min_periods=1) and the state machine references prev_sh / prev_sl (index i-1), preserving no-lookahead.
-- AC-014: get_default_params() returns the six documented parameters with the stated defaults; get_param_schema() exposes min/max/step for each.
+- AC-014: get_default_params() returns the seven documented parameters with the stated defaults; get_param_schema() exposes min/max/step for each numeric parameter and the choices of depth_reference.
+- AC-015: With depth_reference=`broken_level` the pullback fraction is (broken swing high - close) / (broken swing high - impulse swing low) for longs and the mirror for shorts.
+- AC-016: With depth_reference=`impulse_peak` the pullback fraction is (highest high since the BOS - close) / (that high - impulse swing low) for longs and the mirror (lowest low since the BOS) for shorts. A bar whose high exceeds the peak without a BOS close raises the peak and restarts the running pullback low; a refreshing BOS keeps the higher of the old peak and its own high.
+- AC-017: An unknown depth_reference raises ValueError.
 
 ## Edge Cases
 
@@ -68,4 +72,4 @@ Three-step trend/pullback/momentum-break entry indicator. Uses an EMA trend filt
 
 - Input DataFrame has columns H (high), L (low), C (close) with a monotonically increasing time index.
 - shift_features shifts every feature column by one bar to enforce the SDK's no-lookahead invariant before concatenation.
-- ta.trend.ema_indicator and ta.volatility.average_true_range are the canonical EMA/ATR implementations used across the SDK.
+- ta.trend.ema_indicator is the EMA; the ATR is the shared Wilder ATR (fwbg.utils.indicator_math.wilder_atr).

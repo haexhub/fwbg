@@ -10,6 +10,14 @@ Implements a three-step entry signal for trending markets:
                        range, then breaks the last local Lower High (long) or
                        local Higher Low (short) — the momentum entry trigger.
 
+Impulse range for the pullback depth (``depth_reference``):
+  broken_level  (default) — from the broken swing high down to the swing low at
+                BOS time (long; mirrored for short). The close must fall below
+                the broken level, back into the old range, to reach the depth.
+  impulse_peak  — from the highest high since the BOS down to the same swing
+                low: the classic Fibonacci retracement of the impulse. A new
+                peak restarts the pullback (and its running low).
+
 The structural stop is placed below the pullback low (long) or above the
 pullback high (short), with an ATR buffer for noise tolerance.
 
@@ -40,7 +48,9 @@ class PullbackMomentumIndicator(BaseIndicator):
     """Trend + Pullback + Momentum Break entry signals (Long and Short)."""
 
     name = "pullback_momentum"
-    version = "1.1.0"
+    version = "1.2.0"
+
+    DEPTH_REFERENCES = ("broken_level", "impulse_peak")
 
     _FEATURES = [
         "tpm_entry_long",
@@ -63,8 +73,15 @@ class PullbackMomentumIndicator(BaseIndicator):
         local_high_lookback: int = 3,
         sl_buffer_mult: float = 0.25,
         atr_period: int = 14,
+        depth_reference: str = "broken_level",
         **params,
     ) -> pd.DataFrame:
+        if depth_reference not in self.DEPTH_REFERENCES:
+            raise ValueError(
+                f"depth_reference must be one of {self.DEPTH_REFERENCES}, "
+                f"got {depth_reference!r}"
+            )
+        from_peak = depth_reference == "impulse_peak"
         n = len(df)
         highs = df["H"].values.astype(np.float64)
         lows = df["L"].values.astype(np.float64)
@@ -97,14 +114,16 @@ class PullbackMomentumIndicator(BaseIndicator):
 
         # ── Long state machine ────────────────────────────────────────────────
         long_state = 0  # 0 = SCANNING, 1 = PULLBACK
-        imp_high_l = 0.0  # price of the broken swing high (impulse top)
+        imp_high_l = 0.0  # price of the broken swing high (the broken level)
         imp_low_l = 0.0  # rolling swing low at BOS time (impulse base)
+        peak_l = 0.0  # highest high since the BOS (impulse_peak only)
         pb_low_l = np.inf  # running minimum low during pullback
 
         # ── Short state machine ───────────────────────────────────────────────
         short_state = 0  # 0 = SCANNING, 1 = PULLBACK
-        imp_high_s = 0.0  # rolling swing high at BOS time (impulse top)
-        imp_low_s = 0.0  # price of the broken swing low (impulse base)
+        imp_high_s = 0.0  # rolling swing high at BOS time (impulse base)
+        imp_low_s = 0.0  # price of the broken swing low (the broken level)
+        trough_s = 0.0  # lowest low since the BOS (impulse_peak only)
         pb_high_s = -np.inf  # running maximum high during pullback
 
         for i in range(1, n):
@@ -129,6 +148,7 @@ class PullbackMomentumIndicator(BaseIndicator):
                     long_state = 1
                     imp_high_l = prev_sh
                     imp_low_l = prev_sl
+                    peak_l = h
                     pb_low_l = lo
 
             else:  # PULLBACK
@@ -140,16 +160,22 @@ class PullbackMomentumIndicator(BaseIndicator):
                     # New BOS while waiting for pullback → refresh impulse
                     imp_high_l = prev_sh
                     imp_low_l = prev_sl
+                    peak_l = max(peak_l, h)
                     pb_low_l = lo
 
                 else:
-                    if lo < pb_low_l:
+                    if from_peak and h > peak_l:
+                        # A new peak restarts the pullback
+                        peak_l = h
+                        pb_low_l = lo
+                    elif lo < pb_low_l:
                         pb_low_l = lo
 
-                    impulse_range = imp_high_l - imp_low_l
+                    top = peak_l if from_peak else imp_high_l
+                    impulse_range = top - imp_low_l
                     pb = 0.0
                     if impulse_range > EPSILON:
-                        pb = (imp_high_l - c) / impulse_range
+                        pb = (top - c) / impulse_range
 
                     in_pullback_long[i] = 1.0
 
@@ -178,6 +204,7 @@ class PullbackMomentumIndicator(BaseIndicator):
                     short_state = 1
                     imp_high_s = prev_sh
                     imp_low_s = prev_sl
+                    trough_s = lo
                     pb_high_s = h
 
             else:  # PULLBACK
@@ -189,16 +216,22 @@ class PullbackMomentumIndicator(BaseIndicator):
                     # New BOS down while waiting for pullback → refresh impulse
                     imp_high_s = prev_sh
                     imp_low_s = prev_sl
+                    trough_s = min(trough_s, lo)
                     pb_high_s = h
 
                 else:
-                    if h > pb_high_s:
+                    if from_peak and lo < trough_s:
+                        # A new trough restarts the pullback
+                        trough_s = lo
+                        pb_high_s = h
+                    elif h > pb_high_s:
                         pb_high_s = h
 
-                    impulse_range = imp_high_s - imp_low_s
+                    bottom = trough_s if from_peak else imp_low_s
+                    impulse_range = imp_high_s - bottom
                     pb = 0.0
                     if impulse_range > EPSILON:
-                        pb = (c - imp_low_s) / impulse_range
+                        pb = (c - bottom) / impulse_range
 
                     in_pullback_short[i] = 1.0
 
@@ -265,6 +298,7 @@ class PullbackMomentumIndicator(BaseIndicator):
             "local_high_lookback": 3,
             "sl_buffer_mult": 0.25,
             "atr_period": 14,
+            "depth_reference": "broken_level",
         }
 
     @classmethod
@@ -332,6 +366,17 @@ class PullbackMomentumIndicator(BaseIndicator):
                 "min": 5,
                 "max": 50,
                 "step": 1,
+            },
+            "depth_reference": {
+                "type": "choice",
+                "choices": list(cls.DEPTH_REFERENCES),
+                "default": "broken_level",
+                "description": (
+                    "Top of the impulse range for the pullback depth (long; "
+                    "mirrored for short). broken_level: the broken swing high, so "
+                    "the close must fall back below it. impulse_peak: the highest "
+                    "high since the BOS (classic Fibonacci retracement)."
+                ),
             },
         }
 
