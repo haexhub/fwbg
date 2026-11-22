@@ -871,9 +871,9 @@ def attach_regime_labels(trades, df):
     if adx_col:
         adx = df[adx_col]
     else:
-        import ta
+        from fwbg.utils.indicator_math import wilder_adx
 
-        adx = ta.trend.adx(df["H"], df["L"], df["C"], window=14)
+        adx = wilder_adx(df["H"], df["L"], df["C"], period=14)
 
     atr_valid = atr.dropna()
     vol_low, vol_high = (
