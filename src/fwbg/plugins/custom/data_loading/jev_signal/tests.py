@@ -63,3 +63,8 @@ def test_rerunning_execute_does_not_duplicate_columns():
     assert isinstance(ctx.df["_composed_signal_long"], pd.Series)
     assert isinstance(ctx.df["_composed_signal_short"], pd.Series)
     assert ctx.df["_composed_signal_long"].iloc[1] == 0.9
+
+
+def test_default_params_are_readable_from_the_class():
+    # The plugin API reads defaults without an instance, like for every plugin.
+    assert JevSignalLoader.get_default_params() == {"provider": "jev_official"}
