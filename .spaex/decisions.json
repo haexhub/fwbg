@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "checked": {
+    "source_hash": "1b7f51502d5db91cfbcd9895535cf80a1092198b7a8a84fa4c39933127b2af3a",
+    "prompt_hash": "aad1b9eb44b8d38d2bb92a30d9806c85710edad91159543012d0d3a0c686372a"
+  },
+  "decisions": {
+    "0d2cd399b9a119a03b600e3c906bec535f03641b52dd6e089d8956afaee1d350": {
+      "kind": "duplicate",
+      "summary": "Both passages give the same rule on abstraction: don't extract speculative or superficial abstractions, but do extract a concrete, domain-owned one when real shared behavior or duplication justifies it.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "6741ac35c27b221471f2f91306fe80065e5e5d29ced544301b771bdec89f53b8",
+          "text": "- Do not abstract two things merely because they look similar. First establish\n  that they have the same behavior, ownership, change reason, and invariants.\n  A small amount of local duplication is preferable to a premature generic\n  abstraction that couples unrelated callers.\n- Refactor repeated behavior when the shared rule is real and the abstraction\n  makes both callers clearer. Keep the abstraction close to the domain that\n  owns it; avoid a generic utility module becoming a dumping ground."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.ponytail/ponytail",
+          "text_hash": "762e24a72676f77dd6c37bbe977676817ac4012c63ec2d09cff09a3b67f565eb",
+          "text": "- Do not introduce speculative abstractions or abstractions solely because a\n  change might be reusable. A concrete, domain-owned abstraction that\n  improves cohesion, removes real duplication, or makes a branch independently\n  testable is not premature; use it when the code evidence supports it, even\n  when the task did not name the extraction. Keep it as small as possible."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T23:31:54Z",
+      "answered_at": "2026-11-22T23:31:54Z"
+    },
+    "1864129a77cdc6a3b95f9fa70bb0ec59cbd977b7a8d19d5e0b44a0a986c9c232": {
+      "kind": "duplicate",
+      "summary": "Both passages instruct testing observable behavior/contracts rather than private implementation details, so a behavior-preserving refactor shouldn't force test rewrites.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "b40d11822dc2a8a89a8a9bb2f1675146f0eb6c53715b90d4f5a49589cafd15d6",
+          "text": "- Test observable behavior and public contracts, not private implementation\n  details. A refactor that preserves the contract should not require rewriting\n  the tests."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "7a1a0eeaac59bc038091024ce18548618623c02b59b90c1111d5e43808366c25",
+          "text": "- Add or update tests with behavior changes. Test observable behavior and\n  important failure modes, not private implementation details. A test is\n  useful only when it can fail for a real regression."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T23:31:54Z",
+      "answered_at": "2026-11-22T23:31:54Z"
+    },
+    "2862790b65abcc585b82de2f8744d060b97c4610551bb353c99baa0343f01ef6": {
+      "kind": "duplicate",
+      "summary": "Both passages tell the agent to avoid adding new dependencies and prefer what already exists (standard library, existing packages) unless a new dependency is genuinely justified.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python",
+          "text_hash": "b0ef9db3ce2459127537507e2bf40393ff71f4f62d56bd64f09686ea6a9d4042",
+          "text": "- Prefer the standard library and existing project dependencies before adding\n  a new package. Keep dependency additions justified by a real capability or\n  maintenance benefit, not by a shorter one-off expression."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.ponytail/ponytail",
+          "text_hash": "4c562973945914ed6622e8b0c52002246739f4156c6be0345a87b4d18b04d806",
+          "text": "- No new dependency if it can be avoided."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T23:31:54Z",
+      "answered_at": "2026-11-22T23:31:54Z"
+    },
+    "7e45f4104af8df999f7b0fe5e3c723fde92eb2d5e2108f16df604df4fac1ea01": {
+      "kind": "duplicate",
+      "summary": "Both passages require running the project's formatter, static checks, and tests before handing off a change, and forbid claiming checks passed without actually running them.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python",
+          "text_hash": "a9ff15093b69f5a4fe89017c215c61c46552d54f7f4a9f636b30160a3b25ecd7",
+          "text": "- Before handing off a change, run the project's formatter, linter, type\n  checker, and relevant tests. When no project-specific commands exist, a\n  reasonable baseline is `python -m compileall`, the configured test command,\n  and the configured static checks; do not claim checks passed without running\n  them."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "4faee003478985615514c17ece6d238eb07bc12d72f63b3166afe8064a186711",
+          "text": "- Before handoff, run the repository's formatter, static checks, and relevant\n  tests. Report what was run and any checks that were unavailable or skipped;\n  do not turn a green-looking diff into an unverified claim."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T23:31:54Z",
+      "answered_at": "2026-11-22T23:31:54Z"
+    }
+  }
+}
