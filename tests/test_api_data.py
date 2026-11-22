@@ -391,6 +391,70 @@ def test_stale_quality_report_is_ignored(cached_source):
     assert _find_existing_file("EURUSD", "DAY_1", "2024-01-01", "2024-05-05") is None
 
 
+def _report_with_confirmed_hole(path, hole, age_of_file=100):
+    import json
+    import os
+    import time
+
+    report = path.with_suffix(".quality.json")
+    report.write_text(
+        json.dumps({"max_gap_seconds": 30 * 86400.0, "confirmed_holes": [hole]})
+    )
+    os.utime(path, (time.time() - age_of_file, time.time() - age_of_file))
+    return report
+
+
+def test_hole_confirmed_by_two_downloads_is_accepted(cached_source):
+    from fwbg.api.data import _find_existing_file
+
+    path = cached_source.get_file_path("EURUSD", "DAY_1")
+    _write_bars(
+        path,
+        _daterange("2024-01-01", "2024-02-01") + _daterange("2024-04-01", "2024-04-30"),
+    )
+    _report_with_confirmed_hole(
+        path, ["2024-02-01T00:00:00+00:00", "2024-04-01T00:00:00+00:00"]
+    )
+
+    assert (
+        _find_existing_file("EURUSD", "DAY_1", "2024-01-01", "2024-04-30") is not None
+    )
+
+
+def test_a_confirmed_hole_elsewhere_does_not_excuse_another_one(cached_source):
+    from fwbg.api.data import _find_existing_file
+
+    path = cached_source.get_file_path("EURUSD", "DAY_1")
+    _write_bars(
+        path,
+        _daterange("2024-01-01", "2024-02-01") + _daterange("2024-04-01", "2024-04-30"),
+    )
+    _report_with_confirmed_hole(
+        path, ["2023-02-01T00:00:00+00:00", "2023-04-01T00:00:00+00:00"]
+    )
+
+    assert _find_existing_file("EURUSD", "DAY_1", "2024-01-01", "2024-04-30") is None
+
+
+def test_a_confirmed_hole_in_a_stale_report_is_ignored(cached_source):
+    import os
+    import time
+
+    from fwbg.api.data import _find_existing_file
+
+    path = cached_source.get_file_path("EURUSD", "DAY_1")
+    _write_bars(
+        path,
+        _daterange("2024-01-01", "2024-02-01") + _daterange("2024-04-01", "2024-04-30"),
+    )
+    report = _report_with_confirmed_hole(
+        path, ["2024-02-01T00:00:00+00:00", "2024-04-01T00:00:00+00:00"], age_of_file=0
+    )
+    os.utime(report, (time.time() - 100, time.time() - 100))  # file is newer
+
+    assert _find_existing_file("EURUSD", "DAY_1", "2024-01-01", "2024-04-30") is None
+
+
 def test_ensure_redownload_keeps_the_span_of_the_file_it_replaces(
     client, monkeypatch, cached_source
 ):

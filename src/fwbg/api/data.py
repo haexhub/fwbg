@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from fwbg.api._paths import validate_id
 from fwbg.core.data_sources import _DATA_SOURCES, CSVSourceConfig
+from fwbg.data.quality import LONG_HOLE_DAYS, holes_overlap, long_holes
 
 log = logging.getLogger(__name__)
 
@@ -309,9 +310,9 @@ def _file_covers_from(path: Path, date_from: str) -> bool:
 
 
 _END_TOLERANCE_DAYS = 7  # weekends and exchange holidays at the end of a window
-_MAX_GAP_DAYS = (
-    14  # a hole this long inside a window is a failed download, not a holiday
-)
+# A hole this long inside a window is a failed download, not a holiday, unless
+# two downloads in a row confirmed it (fwbg.data.quality.LONG_HOLE_DAYS).
+_MAX_GAP_DAYS = LONG_HOLE_DAYS
 
 
 def _csv_last_date(path: Path) -> str | None:
@@ -342,25 +343,41 @@ def _file_covers_to(path: Path, date_to: str) -> bool:
         return True
 
 
-def _quality_max_gap_days(path: Path) -> float | None:
-    """Longest gap the downloader recorded for *path*, if its report is current."""
+def _quality_report(path: Path) -> dict | None:
+    """The downloader's report for *path*, if it was written after the file."""
     report_path = path.with_suffix(".quality.json")
     try:
         if report_path.stat().st_mtime < path.stat().st_mtime:
             return None  # the file was replaced after the report was written
-        gap = json.loads(report_path.read_text()).get("max_gap_seconds")
+        report = json.loads(report_path.read_text())
     except (OSError, ValueError):
         return None
+    return report if isinstance(report, dict) else None
+
+
+def _quality_max_gap_days(report: dict | None) -> float | None:
+    """Longest gap the downloader recorded, in days."""
+    gap = (report or {}).get("max_gap_seconds")
     return float(gap) / 86400 if isinstance(gap, (int, float)) else None
+
+
+def _confirmed_holes(report: dict | None) -> list[list[str]]:
+    """Holes two downloads in a row returned: the source has no data there."""
+    holes = (report or {}).get("confirmed_holes")
+    if not isinstance(holes, list):
+        return []
+    return [h for h in holes if isinstance(h, list) and len(h) == 2]
 
 
 def _file_has_no_large_gap(
     path: Path, date_from: str | None, date_to: str | None
 ) -> bool:
-    """Return False if bars inside [date_from, date_to] have a hole over _MAX_GAP_DAYS."""
+    """Return False if bars inside [date_from, date_to] have a hole over
+    _MAX_GAP_DAYS that the downloader has not confirmed as the source's own."""
     import pandas as pd
 
-    recorded = _quality_max_gap_days(path)
+    report = _quality_report(path)
+    recorded = _quality_max_gap_days(report)
     if recorded is not None and recorded <= _MAX_GAP_DAYS:
         return True  # no hole anywhere in the file, so none in the window either
     try:
@@ -375,8 +392,11 @@ def _file_has_no_large_gap(
         stamps = stamps[stamps <= pd.Timestamp(date_to)]
     if len(stamps) < 2:
         return True
-    largest = stamps.sort_values().diff().max()
-    return largest <= pd.Timedelta(days=_MAX_GAP_DAYS)
+    confirmed = _confirmed_holes(report)
+    return all(
+        any(holes_overlap(hole, known) for known in confirmed)
+        for hole in long_holes(pd.DatetimeIndex(stamps.sort_values()), _MAX_GAP_DAYS)
+    )
 
 
 def _find_existing_file(
