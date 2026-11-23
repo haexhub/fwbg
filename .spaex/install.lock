@@ -1,12 +1,48 @@
 {
-  "generation_id": "g_20261122T232949Z_e3b0",
+  "content_hashes": {
+    ".envrc": "sha256:55e58863c9df0092aa5042028528d39b699b89bbe9462e78924ec5a7fd71e942",
+    "flake.nix": "sha256:332eb65a5fe925a50f3b209108730399788e73ed2e7180ed599a7201c731312d"
+  },
+  "generation_id": "g_20261123T093033Z_e3b0",
   "molecules": [
+    {
+      "id": "com.github.haexmas.atoms.ast-grep",
+      "paths": [
+        ".spaex/constitution.md"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "id": "com.github.haexmas.atoms.coding-guideline-go",
+      "paths": [
+        ".spaex/constitution.md"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript",
+      "paths": [
+        ".spaex/constitution.md"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
     {
       "id": "com.github.haexmas.atoms.coding-guideline-python",
       "paths": [
         ".spaex/constitution.md"
       ],
-      "revision": "d70bb8fd408458bd104ca6e7101d9f146d45adb3",
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "id": "com.github.haexmas.atoms.coding-guideline-rust",
+      "paths": [
+        ".spaex/constitution.md"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
       "source": "https://github.com/haexmas/atoms"
     },
     {
@@ -14,7 +50,42 @@
       "paths": [
         ".spaex/constitution.md"
       ],
-      "revision": "d70bb8fd408458bd104ca6e7101d9f146d45adb3",
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "hook_status": "skipped",
+      "id": "com.github.haexmas.atoms.graphify-first-authoring",
+      "paths": [
+        ".spaex/constitution.md"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "hook_status": "skipped",
+      "id": "com.github.haexmas.atoms.nix-devshell-base",
+      "paths": [
+        ".envrc",
+        "flake.nix"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "id": "com.github.haexmas.atoms.nix-nodejs",
+      "paths": [
+        ".spaex/generated/nix-packages.json"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "id": "com.github.haexmas.atoms.nix-rust",
+      "paths": [
+        ".spaex/generated/nix-packages.json"
+      ],
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
       "source": "https://github.com/haexmas/atoms"
     },
     {
@@ -22,25 +93,61 @@
       "paths": [
         ".spaex/constitution.md"
       ],
-      "revision": "d70bb8fd408458bd104ca6e7101d9f146d45adb3",
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
       "source": "https://github.com/haexmas/atoms"
     },
     {
       "id": "com.github.haexmas.atoms.speckit",
       "paths": [],
-      "revision": "d70bb8fd408458bd104ca6e7101d9f146d45adb3",
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
       "source": "https://github.com/haexmas/atoms",
       "speckit": {
-        "cli_version": "1.0.11",
-        "declaration_fingerprint": "sha256:d4ab151b7079b4c4bd184f6caf6c37568e9e76938747f60bde08e7de6fbf1bfb",
+        "cli_version": "not-run",
+        "declaration_fingerprint": "sha256:900559a03dd2a71d9c33ec436967656e000fb1b34b5c85b7cd3a0e95d8bb29de",
         "outcomes": {
-          "claude": "installed",
-          "codex": "installed"
+          "agy": "skipped",
+          "alquimia": "skipped",
+          "amp": "skipped",
+          "auggie": "skipped",
+          "bob": "skipped",
+          "claude": "skipped",
+          "cline": "skipped",
+          "codebuddy": "skipped",
+          "codex": "skipped",
+          "command-code": "skipped",
+          "copilot": "skipped",
+          "cursor-agent": "skipped",
+          "devin": "skipped",
+          "docker-agent": "skipped",
+          "droid": "skipped",
+          "dsh": "skipped",
+          "firebender": "skipped",
+          "forge": "skipped",
+          "gemini": "skipped",
+          "generic": "skipped",
+          "goose": "skipped",
+          "grok": "skipped",
+          "hermes": "skipped",
+          "junie": "skipped",
+          "kilocode": "skipped",
+          "kimi": "skipped",
+          "kiro-cli": "skipped",
+          "lingma": "skipped",
+          "muse": "skipped",
+          "omp": "skipped",
+          "opencode": "skipped",
+          "pi": "skipped",
+          "qodercli": "skipped",
+          "qwen": "skipped",
+          "rovodev": "skipped",
+          "shai": "skipped",
+          "tabnine": "skipped",
+          "trae": "skipped",
+          "vibe": "skipped",
+          "zcode": "skipped",
+          "zed": "skipped"
         },
-        "selected": [
-          "claude",
-          "codex"
-        ]
+        "selected": []
       }
     }
   ],
