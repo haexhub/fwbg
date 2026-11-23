@@ -535,7 +535,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             if params.get(p, 0) > 0:
                 params[p] = params[p] * asset.point
 
-    timeframe = _canon_tf(ind_tf if chart_df is not None else body.timeframe)
+    timeframe = ind_canon if chart_df is not None else _canon_tf(body.timeframe)
     if timeframe is not None:
         df.attrs[TIMEFRAME_ATTR] = timeframe
     result_df = plugin.compute(df, **params)
@@ -586,7 +586,8 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             else set()
         )
         close_cols = (unshifted_cols & plugin_signal_cols) - calendar_cols
-        duration = pd.Timedelta(minutes=Timeframe.from_str(ind_tf).minutes)
+        assert timeframe is not None  # validated before loading the higher timeframe
+        duration = pd.Timedelta(minutes=Timeframe.from_str(timeframe).minutes)
         _forward_fill_to_chart_tf(
             result_df, chart_df, all_ind_cols, close_cols, duration
         )
