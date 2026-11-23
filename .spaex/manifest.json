@@ -9,15 +9,13 @@
         "com.github.haexmas.atoms.coding-guideline-rust",
         "com.github.haexmas.atoms.general-coding",
         "com.github.haexmas.atoms.graphify-first-authoring",
-        "com.github.haexmas.atoms.haex-vault",
         "com.github.haexmas.atoms.nix-devshell-base",
         "com.github.haexmas.atoms.nix-nodejs",
         "com.github.haexmas.atoms.nix-rust",
         "com.github.haexmas.atoms.ponytail",
-        "com.github.haexmas.atoms.spaex-constitution",
         "com.github.haexmas.atoms.speckit"
       ],
-      "revision": "d70bb8fd408458bd104ca6e7101d9f146d45adb3",
+      "revision": "5ca183f320d0f7b4d163f419117cecb5cabdbca7",
       "source": "https://github.com/haexmas/atoms"
     }
   ],
