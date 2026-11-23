@@ -104,8 +104,8 @@ def reference_supertrend(high, low, close, period, mult):
         mid = (h[i] + lo[i]) / 2
         new_upper, new_lower = mid + mult * atr, mid - mult * atr
         # bands only tighten while the previous close stayed inside them
-        lower = lower if (new_lower < lower and c[i - 1] > lower) else new_lower
-        upper = upper if (new_upper > upper and c[i - 1] < upper) else new_upper
+        lower = lower if (new_lower < lower and c[i - 1] >= lower) else new_lower
+        upper = upper if (new_upper > upper and c[i - 1] <= upper) else new_upper
         if direction[i - 1] == 1:
             direction[i] = -1.0 if c[i] < lower else 1.0
         else:
@@ -242,3 +242,17 @@ class TestSupertrendMTFValues:
     def test_invalid_d1_bars_raises(self, mtf_indicator):
         with pytest.raises(ValueError, match="d1_bars"):
             mtf_indicator.compute(self._m15(days=5), d1_bars=1)
+
+
+def test_close_exactly_on_lower_band_keeps_it_until_next_bar(indicator):
+    df = pd.DataFrame(
+        {
+            "H": [102.0, 102.0, 100.0, 100.0],
+            "L": [98.0, 98.0, 96.0, 96.0],
+            "C": [100.0, 98.0, 97.0, 97.0],
+        }
+    )
+    result = indicator.compute(df, period=2, multiplier=0.5)
+    assert result["st_direction"].iloc[2:].tolist() == [1.0, -1.0]
+    assert result["st_flip"].iloc[3] == 1.0
+    assert result["_st_line"].iloc[3] == 100.0

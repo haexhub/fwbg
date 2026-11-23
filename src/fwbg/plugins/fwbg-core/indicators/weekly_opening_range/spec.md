@@ -8,7 +8,7 @@ Computes weekly opening range features (range, position, breakout flags, ATR-nor
 
 ## Summary
 
-Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative to the opening range defined by the first `range_bars` bar periods of each trading week (the week starts at its first bar: Sunday evening for FX, Monday for exchanges; the week key is the ISO week of `timestamp + 12h`), and — when enabled — rolling statistics (avg range, range-vs-avg, breakout rate) over the previous `stat_window` weeks. Supports single or multiple `range_bars` values (emits a `wor_rb{N}_` column set per value). Skips daily/weekly timeframes (returns df unchanged when the median bar spacing is >= 20 hours).
+Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative to the opening range defined by the first `range_bars` bar periods of each trading week (the week starts at its first bar: Sunday evening for FX, Monday for exchanges; the week key is the ISO week of `timestamp + 12h`), and — when enabled — rolling statistics (avg range, range-vs-avg, breakout rate) over the previous `stat_window` weeks. Supports single or multiple `range_bars` values (emits a `wor_rb{N}_` column set per value). Skips daily/weekly timeframes (returns df unchanged when the bar duration is >= 20 hours).
 
 ## Inputs
 
@@ -47,14 +47,14 @@ Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative
 - AC-005: get_signal_columns() returns an empty list: the `_breakout_up` / `_breakout_down` columns are shifted like every feature.
 - AC-006: `get_feature_columns()` returns the cached list after `compute()` runs; when called with explicit `params` (or before compute), they reconstruct the column names from `range_bars` and `enable_stats`.
 - AC-007: Raises `ValueError` when the input DataFrame does not have a `DatetimeIndex`.
-- AC-008: Returns the input DataFrame unchanged when the median index spacing is >= 20 hours (daily / weekly bars).
+- AC-008: Returns the input DataFrame unchanged when the bar duration is >= 20 hours (daily / weekly bars).
 - AC-009: Uses `safe_divide` for all normalizations to avoid division-by-zero.
 - AC-010: Registered under the name `weekly_opening_range` via `@register_indicator`.
 
 ## Edge Cases
 
 - DataFrame without a DatetimeIndex → raises ValueError.
-- Daily or weekly bars (median index diff >= 20h) → returns the input DataFrame unchanged, adding no features.
+- Daily or weekly bars (bar duration >= 20h) → returns the input DataFrame unchanged, adding no features.
 - Bars inside the range window of the week → all wor_rb{N}_* features are NaN for that bar.
 - First week(s) in the data → wor_stat_* features are NaN until the rolling window has at least `max(1, stat_window // 2)` prior weeks.
 - `range_bars` passed as an int vs a list → both are accepted; a list produces one column set per element.

@@ -39,12 +39,14 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from fwbg_sdk.enums import Timeframe
 from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.adapters.broker import BrokerAdapter, OrderSide, OrderStatus, BarData
 from fwbg.core import get_model
 from fwbg.pipeline import compute_indicator_pool, get_registry
 from fwbg.pipeline.features import configured_signal_columns
 from fwbg.data.loader import run_data_loading
+from fwbg.data.resample import TIMEFRAME_ATTR
 from fwbg.data.assets import get_asset
 from fwbg.core.risk_state import RiskState
 from fwbg.utils.indicator_math import wilder_atr
@@ -72,6 +74,10 @@ class AssetConfig:
     tp_mult: float = 40.0
     ensemble: Dict[str, Any] = field(default_factory=dict)
     strategy_slug: str | None = None
+    indicators: list[str | dict] | None = None
+    data_loading: list[dict] | None = None
+    preprocessing: list[dict] = field(default_factory=list)
+    timeframe: str | None = None
 
     @classmethod
     def from_dict(cls, symbol: str, data: Dict[str, Any]) -> "AssetConfig":
@@ -86,6 +92,10 @@ class AssetConfig:
             tp_mult=data.get("tp_mult", 40.0),
             ensemble=data.get("ensemble", {}),
             strategy_slug=data.get("strategy_slug"),
+            indicators=data.get("indicators"),
+            data_loading=data.get("data_loading"),
+            preprocessing=data.get("preprocessing") or [],
+            timeframe=data.get("timeframe"),
         )
 
 
@@ -345,7 +355,7 @@ class TradingBot:
         Hinweis: Das Live-Modell ist NICHT das gebacktestete Modell. Es wird bei
         jedem Start neu auf den letzten 1000 Stunden-Bars des Brokers trainiert
         (feste Hyperparameter, kein Hold-out); aus der Optimizer-Konfiguration
-        stammen nur Features, Schwellen und SL/TP-Multiplikatoren. Backtest-
+        stammen Features, Indikatorparameter, Schwellen und SL/TP-Multiplikatoren. Backtest-
         Ergebnisse sind daher kein Nachweis für dieses Modell.
         """
         try:
@@ -375,7 +385,7 @@ class TradingBot:
             self.last_bar_time[symbol] = df.index[-1]
 
             # Features berechnen
-            df = self._compute_features(df)
+            df = self._compute_features(df, cfg)
             self.features_cache[symbol] = df
 
             # Prüfe ob alle Features vorhanden
@@ -384,7 +394,7 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: Missing features: {missing[:5]}...")
                 return False
 
-            unshifted = self._unshifted_signal_features(cfg.features)
+            unshifted = self._unshifted_signal_features(cfg.features, cfg.indicators)
             if unshifted:
                 logger.warning(
                     f"⚠️ {symbol}: features {unshifted[:5]} are unshifted signal "
@@ -430,32 +440,41 @@ class TradingBot:
             return False
 
     @staticmethod
-    def _unshifted_signal_features(features: List[str]) -> List[str]:
+    def _unshifted_signal_features(
+        features: List[str], indicators: list[str | dict] | None = None
+    ) -> List[str]:
         """The *features* that an indicator declares as unshifted signal columns."""
         from fwbg_sdk import PluginPhase
 
-        registry = get_registry()
-        registry.auto_discover()
-        names = [
-            name
-            for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
-            if not registry.get(name).stateful
-        ]
-        declared = set(configured_signal_columns(names))
+        if indicators is None:
+            registry = get_registry()
+            registry.auto_discover()
+            indicators = [
+                name
+                for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
+                if not registry.get(name).stateful
+            ]
+        declared = set(configured_signal_columns(indicators))
         return [f for f in features if f in declared]
 
-    def _compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Berechnet alle Features für einen DataFrame."""
+    def _compute_features(self, df: pd.DataFrame, cfg: AssetConfig) -> pd.DataFrame:
+        """Use the same indicator and data-loading settings for training and updates."""
+        if (
+            cfg.timeframe is not None
+            and Timeframe.from_str(cfg.timeframe) != Timeframe.H1
+        ):
+            raise ValueError("The live bot requires an HOUR_1 strategy")
+        if cfg.preprocessing:
+            raise ValueError("The live bot does not support strategy preprocessing")
+
         df = df.copy()
-
-        # Technische Indikatoren via Plugin-System
-        df = compute_indicator_pool(df)
-
-        # Data Loading (Macro etc.) via Plugin-System
-        if hasattr(self, "_data_loading_configs") and self._data_loading_configs:
-            df = run_data_loading(df, self._data_loading_configs)
-
-        return df
+        data_loading = cfg.data_loading
+        if data_loading is None:
+            data_loading = getattr(self, "_data_loading_configs", None)
+        if data_loading:
+            df = run_data_loading(df, data_loading)
+        df.attrs[TIMEFRAME_ATTR] = Timeframe.H1.canonical
+        return compute_indicator_pool(df, indicators=cfg.indicators)
 
     def run(self):
         """
@@ -560,18 +579,25 @@ class TradingBot:
 
         # Neue Bar hinzufügen
         if bar.timestamp not in cache_df.index:
-            cache_df.loc[bar.timestamp] = [bar.open, bar.high, bar.low, bar.close]
+            cache_df = cache_df.copy()
+            values = {
+                "O": bar.open,
+                "H": bar.high,
+                "L": bar.low,
+                "C": bar.close,
+                "V": bar.volume,
+            }
+            cache_df.loc[bar.timestamp] = pd.Series(values).reindex(cache_df.columns)
             cache_df = cache_df.sort_index()
 
             # Auf 1000 Bars begrenzen
             if len(cache_df) > 1000:
                 cache_df = cache_df.tail(1000)
 
+            features = self._compute_features(cache_df, self.assets[symbol])
             self.ohlc_cache[symbol] = cache_df
-            self.last_bar_time[symbol] = bar.timestamp
-
-            # Features neu berechnen
-            self.features_cache[symbol] = self._compute_features(cache_df)
+            self.last_bar_time[symbol] = cache_df.index[-1]
+            self.features_cache[symbol] = features
 
     def _check_all_signals(self):
         """Prüft Signale für alle Symbole (Polling-Modus)."""
@@ -609,15 +635,11 @@ class TradingBot:
                     old_df = self.ohlc_cache[symbol]
                     combined = pd.concat([old_df, df])
                     combined = combined[~combined.index.duplicated(keep="last")]
-                    combined = combined.sort_index().tail(1000)
-                    self.ohlc_cache[symbol] = combined
-                else:
-                    self.ohlc_cache[symbol] = df
-
-                self.last_bar_time[symbol] = self.ohlc_cache[symbol].index[-1]
-                self.features_cache[symbol] = self._compute_features(
-                    self.ohlc_cache[symbol]
-                )
+                    df = combined.sort_index().tail(1000)
+                features = self._compute_features(df, self.assets[symbol])
+                self.ohlc_cache[symbol] = df
+                self.last_bar_time[symbol] = df.index[-1]
+                self.features_cache[symbol] = features
 
         except Exception as e:
             logger.warning(f"⚠️ {symbol}: Cache update failed: {e}")

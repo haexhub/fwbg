@@ -13,6 +13,8 @@ import pandas as pd
 
 from fwbg_sdk.enums import Timeframe
 
+TIMEFRAME_ATTR = "fwbg_timeframe"
+
 # Ordered from lowest to highest resolution (canonical names)
 TIMEFRAME_ORDER = [tf.canonical for tf in sorted(Timeframe, key=lambda t: t.minutes)]
 
@@ -29,6 +31,24 @@ _PARSE_SUFFIXES = sorted(
 )
 
 
+def bar_timing(df: pd.DataFrame) -> tuple[pd.Timedelta | None, int]:
+    """Return the bar length and the first row where it is known.
+
+    Loaders provide the nominal timeframe. For frames without it, fix the
+    estimate as soon as two intervals are observed. Taking the shorter interval
+    tolerates one leading gap and later gaps cannot revise the estimate.
+    """
+    timeframe = df.attrs.get(TIMEFRAME_ATTR)
+    if timeframe is not None:
+        return pd.Timedelta(minutes=Timeframe.from_str(timeframe).minutes), 0
+    index = df.index
+    if isinstance(index, pd.DatetimeIndex) and len(index) >= 3:
+        step = min(index[1] - index[0], index[2] - index[1])
+        if step > pd.Timedelta(0):
+            return step, 2
+    return None, len(df)
+
+
 def resample_ohlcv(df: pd.DataFrame, target_tf: str) -> pd.DataFrame:
     """Resample an OHLCV DataFrame to a higher timeframe.
 
@@ -36,7 +56,8 @@ def resample_ohlcv(df: pd.DataFrame, target_tf: str) -> pd.DataFrame:
     value leaves the frame unchanged.
     """
     try:
-        rule = Timeframe.from_str(target_tf).resample_rule
+        timeframe = Timeframe.from_str(target_tf)
+        rule = timeframe.resample_rule
     except ValueError:
         return df
 
@@ -47,11 +68,13 @@ def resample_ohlcv(df: pd.DataFrame, target_tf: str) -> pd.DataFrame:
     # Every bar is labelled with its start time, like the native bars. pandas
     # defaults the weekly rule ("W-SUN") to right-closed/right-labelled, which
     # stamps a week with the Sunday that ends it; W1 bars start on Monday.
-    if Timeframe.from_str(target_tf) is Timeframe.W1:
+    if timeframe is Timeframe.W1:
         resampler = df.resample("W-MON", closed="left", label="left")
     else:
         resampler = df.resample(rule)
-    return resampler.agg(agg).dropna(subset=["O"])
+    result = resampler.agg(agg).dropna(subset=["O"])
+    result.attrs[TIMEFRAME_ATTR] = timeframe.canonical
+    return result
 
 
 def parse_symbol_timeframe(stem: str) -> tuple[str, str] | None:

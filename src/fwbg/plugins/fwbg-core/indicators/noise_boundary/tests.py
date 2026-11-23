@@ -197,3 +197,28 @@ def test_grid_check_does_not_warn_for_a_slice_that_misses_the_open(
         out = NoiseBoundaryIndicator().compute(df.iloc[10:20])
     assert "bar grid" not in caplog.text
     assert out["nb_upper"].isna().all()
+
+
+def test_nyse_early_close_uses_the_calendar_and_provides_the_next_close_anchor():
+    df = sessions(
+        ["2024-11-25", "2024-11-26", "2024-11-29", "2024-12-02"], [0, 0, 0.005, 0]
+    )
+    local = ny(df.index).tz_localize(None)
+    day = local.normalize() == pd.Timestamp("2024-11-29")
+    # Keep artificial after-hours bars too. A high outside the cash session
+    # must neither produce an entry nor become the following day's anchor.
+    last = df.index[local == pd.Timestamp("2024-11-29 12:45")][0]
+    out = NoiseBoundaryIndicator().compute(df, lookback_sessions=2)
+    assert out.loc[day & (df.index < last), "nb_long"].sum() > 0
+    assert out.loc[last, ["nb_exit_long", "nb_exit_short"]].eq(1).all()
+    assert out.loc[day & (df.index >= last), "nb_long"].eq(0).all()
+
+    # Deliberately make Dec 2 gap below Friday's cash close, so the upper
+    # band depends on Friday's 13:00 close.
+    monday = local.normalize() == pd.Timestamp("2024-12-02")
+    df.loc[monday, ["O", "H", "L", "C"]] = 95.0
+    out = NoiseBoundaryIndicator().compute(df, lookback_sessions=2)
+    monday_open = out.loc[monday].iloc[0]
+    assert monday_open["nb_upper"] == pytest.approx(df.at[last, "C"] * 1.0025)
+    prefix = NoiseBoundaryIndicator().compute(df.loc[:last], lookback_sessions=2)
+    pd.testing.assert_frame_equal(prefix, out.loc[prefix.index])

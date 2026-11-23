@@ -28,7 +28,7 @@ Events come from a CSV file with one dated event per row, for example Treasury a
 - `evt_days_ahead`: trading days from the bar's date to the next event on or after it (0 on an event day; NaN when no later event is in the file)
 - `evt_window`: 1 inside the window, else 0; NaN where `evt_days_ahead` is NaN, i.e. after the file's last event, because later events are unknown rather than absent
 - `evt_window_start`: 1 on the bar where `evt_window` turns on (previous bar off); NaN after the file's last event
-- `evt_window_end`: 1 on the bar where `evt_window` turns off (previous bar on), an exit column for `signal_exit`; NaN after the file's last event
+- `evt_window_end`: 1 on the bar where `evt_window` turns off (previous bar on), an exit column for `signal_exit`. The last window can end after its event when `window_end=0`. Later exit values are NaN.
 
 An event or a bar dated on a closed day counts from the next trading day. Entering at the close of `evt_window_start` and exiting at the close of `evt_window_end` with `window_start=6`, `window_end=2` holds the returns of the five trading days before each event.
 

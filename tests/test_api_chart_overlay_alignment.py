@@ -104,7 +104,7 @@ def test_mtf_overlay_shows_the_previous_finished_candle(ohlc, tmp_path, client):
     daily.to_csv(tmp_path / "EURUSD_DAY_1.csv", date_format="%Y-%m-%d %H:%M:%S")
 
     mod = import_plugin_module("fwbg-core", "indicators", "supertrend")
-    _, d_line = mod._supertrend(daily["H"], daily["L"], daily["C"], 2, 0.5)
+    d_dir, d_line = mod._supertrend(daily["H"], daily["L"], daily["C"], 2, 0.5)
 
     resp = client.post(
         "/api/chart/indicator",
@@ -132,6 +132,12 @@ def test_mtf_overlay_shows_the_previous_finished_candle(ohlc, tmp_path, client):
     for day in moved:
         rows = drawn[drawn.index.normalize() == daily.index[day]]
         np.testing.assert_allclose(rows.to_numpy(), d_line.iloc[day - 1])
+    direction = pd.Series(body["data"]["st_direction"], index=drawn.index)
+    flips = d_dir.index[(d_dir.diff().abs() == 2) & (d_dir.index < daily.index[-1])]
+    assert len(flips) > 0
+    for day in flips:
+        assert direction.loc[day] == d_dir.shift(1).loc[day]
+        assert direction.loc[day + pd.Timedelta(days=1)] == d_dir.loc[day]
 
 
 def _chart_columns(client, fqn, params):
@@ -245,3 +251,33 @@ def test_ibs_default_unshifted_columns_come_from_the_signal_columns():
 
     ind = import_plugin_module("fwbg-core", "indicators", "ibs").IbsIndicator()
     assert set(ind.get_unshifted_columns()) == set(ind.get_signal_columns())
+
+
+def test_mtf_close_decisions_are_only_visible_after_the_source_bar(
+    ohlc, tmp_path, client
+):
+    daily = ohlc.resample("D").agg(
+        {"O": "first", "H": "max", "L": "min", "C": "last", "V": "sum"}
+    )
+    daily.rename_axis("T").to_csv(tmp_path / "EURUSD_DAY_1.csv")
+    response = client.post(
+        "/api/chart/indicator",
+        json={
+            "fqn": "fwbg-core:ibs",
+            "source": "test_src",
+            "symbol": "EURUSD",
+            "timeframe": "HOUR_1",
+            "indicator_timeframe": "DAY_1",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    drawn = pd.Series(
+        body["data"]["ibs"],
+        index=pd.to_datetime(body["timestamps"], unit="ms"),
+        dtype=float,
+    )
+    expected = (daily["C"] - daily["L"]) / (daily["H"] - daily["L"])
+    expected.iloc[0] = np.nan  # IBS contract
+    expected = expected.shift(1).reindex(drawn.index, method="ffill")
+    pd.testing.assert_series_equal(drawn, expected, check_names=False)

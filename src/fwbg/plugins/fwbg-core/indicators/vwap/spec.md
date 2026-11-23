@@ -41,9 +41,9 @@ VWAP indicator with configurable session-reset (session_start_hour), rolling z-s
 ## Acceptance Criteria
 
 - AC-001: compute() returns the input df concatenated with the VWAP feature columns; original columns are preserved.
-- AC-002: vwap equals the session-cumulative sum of (typical_price * weight) divided by the session-cumulative sum of weight, computed via safe_divide, where typical_price = (H + L + C) / 3.
+- AC-002: vwap equals the session-cumulative sum of (typical_price * weight) divided by the session-cumulative sum of weight, where typical_price = (H + L + C) / 3.
 - AC-003: A bar's session is the wall-clock date (in session_tz) of the last session_start_hour o'clock at or before it, so a new session starts at session_start_hour even when no bar exists in that hour, and every bar of daily or coarser data is its own session (VWAP = the bar's typical price).
-- AC-004: Weights use df['V'] (clipped to >= 0, with zeros replaced by EPSILON) when V is present with at least one non-NaN and at least one positive value; otherwise weights are 1.0 for every bar (equal-weight fallback).
+- AC-004: The weights at each bar use volume accumulated during the session up to that bar. Use equal weights until the first positive volume in the session. Zero, negative and missing volumes add no weight thereafter.
 - AC-005: vwap_deviation = safe_divide(C - vwap, |vwap|).
 - AC-006: For each window w in zscore_windows, vwap_zscore_<w> = safe_divide(deviation - rolling_mean(deviation, w), rolling_std(deviation, w)) using min_periods = max(w // 2, 2).
 - AC-007: vwap_std = sqrt(clip(cum(w*tp^2)/cum(w) - vwap^2, lower=0)) per session, i.e. the volume-weighted std of the session's typical prices up to the bar (evaluated centred on the session's first typical price for numerical stability); for each multiplier m in band_multipliers, vwap_upper_<label> = vwap + m*vwap_std and vwap_lower_<label> = vwap - m*vwap_std, where <label> is int(m) if m is integer-valued else str(m).replace('.', '_').
@@ -56,10 +56,10 @@ VWAP indicator with configurable session-reset (session_start_hour), rolling z-s
 
 - V column missing entirely -> equal-weight fallback (weights = 1.0).
 - V column present but all NaN or all <= 0 -> equal-weight fallback.
-- V column present with mixed values: NaN filled with 0, negative values clipped to 0, then zeros replaced with EPSILON so weights never drop to exactly zero.
+- With mixed volumes, switching to volume weighting affects the bar that first has positive volume and subsequent bars. Earlier equal-weight values stay unchanged.
 - The first bar always opens a session.
 - vwap_variance is clipped to a lower bound of 0 before sqrt to guard against tiny negative values from floating-point error.
-- All divisions use safe_divide, so zero/near-zero denominators do not raise (vwap, vwap_deviation, z-scores, vwap_band_pos).
+- Volume-weighted moments are used only when cumulative weight is positive. Normalized features use safe_divide.
 - Non-integer band multipliers (e.g. 1.5) produce column labels like vwap_upper_1_5 / vwap_lower_1_5 rather than vwap_upper_1.5.
 - Rolling z-score columns can be NaN at the very start of the series until min_periods = max(window // 2, 2) observations are available, and after the one-bar lookahead shift the first valid value moves one row later.
 
@@ -68,4 +68,4 @@ VWAP indicator with configurable session-reset (session_start_hour), rolling z-s
 - df.index is a DatetimeIndex (naive = UTC), required to derive session boundaries.
 - Columns 'H', 'L', 'C' are always present; 'V' is optional.
 - shift_features shifts every produced feature column by exactly one bar to enforce the no-lookahead invariant.
-- safe_divide and EPSILON behave as documented in fwbg_sdk (safe division returning a finite value when the denominator is zero/near-zero).
+- safe_divide returns NaN for zero or near-zero denominators.

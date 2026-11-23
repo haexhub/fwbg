@@ -219,3 +219,16 @@ def test_unparsable_date_raises_instead_of_dropping_the_row(tmp_path):
     # and the indicator does not turn it into an all-NaN warning
     with pytest.raises(ValueError, match="unparsable"):
         compute(["2024-01-09"], events_file=str(path))
+
+
+def test_last_event_can_still_close_the_final_window(tmp_path):
+    path = tmp_path / "single.csv"
+    path.write_text("date\n2025-01-10\n")
+    dates = bdays("2025-01-02", "2025-01-15")
+    out = compute(
+        dates, events_file=str(path), calendar="weekdays", window_start=3, window_end=0
+    ).set_axis(dates)
+    assert out.index[out["evt_window_start"] == 1].tolist() == ["2025-01-07"]
+    assert out.index[out["evt_window_end"] == 1].tolist() == ["2025-01-13"]
+    assert pd.isna(out.loc["2025-01-13", "evt_days_ahead"])
+    assert pd.isna(out.loc["2025-01-14", "evt_window_end"])

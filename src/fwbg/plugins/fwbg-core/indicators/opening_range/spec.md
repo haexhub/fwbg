@@ -8,11 +8,11 @@ Computes session-anchored opening-range breakout features and optional retest si
 
 ## Summary
 
-For each configured session hour, defines an opening range as the time window `[open, open + range_bars * bar_step)` of that day's session (bar_step = median index spacing; bars are labelled by open time, so a missing bar shrinks the range instead of pulling in a later bar; optionally expanded by the `pre_range_bars` bar periods before the open and/or carried forward from prior no-breakout sessions). Range/position/breakout/structural features are live from the end of the range window until `session_end_hour` of the same day (default 24 = local midnight) and NaN afterwards, so a range never reaches into the next day or over a weekend, and breakouts/retests only exist inside the session. Sessions are index-clock hours by default (no DST); with `session_timezone` (e.g. `America/New_York`, `session_minute=30`) the open is computed per day in that timezone and converted to UTC, so it follows daylight saving time (naive index = UTC). Supports absolute and percent breakout thresholds, minimum range-height filters (absolute or ATR-based), and per-retracement-level retest signals with a minimum retracement requirement. Emits column names via `orb_col(rb, cf, prb, session, feature)` with `rb{N}_[cf{N}_][prb{N}_]orb_s{HH}_{feature}` format; `cf`/`prb` segments only appear when configured. Signal columns and structural columns (`_or_high`, `_or_low`, `_or_midpoint`, `_range`, `_sl_dist`) are deliberately not shifted so the exit strategy can consume them at entry_delay=0; all other features are shifted by one bar to avoid lookahead. Like the other unshifted indicators (ibs, zscore, gotobi) the unshifted signal columns are also listed by `get_feature_columns()` and identified through `get_signal_columns()`: they are decision-time columns (signal on the bar's own close, entry at the next open) and must not be used as model features in an ML pipeline, which would see the bar's own close.
+For each configured session hour, defines an opening range as the time window `[open, open + range_bars * bar_step)` of that day's session (bar_step = nominal timeframe or the shorter of the first two observed intervals; bars are labelled by open time, so a missing bar shrinks the range instead of pulling in a later bar; optionally expanded by the `pre_range_bars` bar periods before the open and/or carried forward from prior no-breakout sessions). Range/position/breakout/structural features are live from the end of the range window until `session_end_hour` of the same day (default 24 = local midnight) and NaN afterwards, so a range never reaches into the next day or over a weekend, and breakouts/retests only exist inside the session. Sessions are index-clock hours by default (no DST); with `session_timezone` (e.g. `America/New_York`, `session_minute=30`) the open is computed per day in that timezone and converted to UTC, so it follows daylight saving time (naive index = UTC). Supports absolute and percent breakout thresholds, minimum range-height filters (absolute or ATR-based), and per-retracement-level retest signals with a minimum retracement requirement. Emits column names via `orb_col(rb, cf, prb, session, feature)` with `rb{N}_[cf{N}_][prb{N}_]orb_s{HH}_{feature}` format; `cf`/`prb` segments only appear when configured. Signal columns and structural columns (`_or_high`, `_or_low`, `_or_midpoint`, `_range`, `_sl_dist`) are deliberately not shifted so the exit strategy can consume them at entry_delay=0; all other features are shifted by one bar to avoid lookahead. Like the other unshifted indicators (ibs, zscore, gotobi) the unshifted signal columns are also listed by `get_feature_columns()` and identified through `get_signal_columns()`: they are decision-time columns (signal on the bar's own close, entry at the next open) and must not be used as model features in an ML pipeline, which would see the bar's own close.
 
 ## Inputs
 
-- OHLC DataFrame with DatetimeIndex (columns O, H, L, C); intraday timeframes only — daily bars (median diff >= 20h) are passed through unchanged
+- OHLC DataFrame with DatetimeIndex (columns O, H, L, C); intraday timeframes only — daily bars (bar duration >= 20h) are passed through unchanged
 
 ## Parameters
 
@@ -53,7 +53,7 @@ For each configured session hour, defines an opening range as the time window `[
 
 ## Acceptance Criteria
 
-- AC-001: On a DataFrame whose median index spacing is >= 20 hours (daily data), compute() returns the input DataFrame unchanged (no ORB columns added).
+- AC-001: On a DataFrame whose bar duration is >= 20 hours (daily data), compute() returns the input DataFrame unchanged (no ORB columns added).
 - AC-002: Raises ValueError when the DataFrame index is not a pd.DatetimeIndex.
 - AC-003: For each (rb, cf, prb, session_hour) combination, emits all ORB_BASE_FEATURES columns and, when enable_retracement=True, retest_bull/retest_bear/sl_dist columns for each retracement level; column names follow the orb_col() format.
 - AC-004: The `cf{N}_` prefix segment appears only when carry_forward_days is a multi-element list or contains a non-zero value; likewise for `prb{N}_` and pre_range_bars.
@@ -71,7 +71,7 @@ For each configured session hour, defines an opening range as the time window `[
 
 ## Edge Cases
 
-- Daily or higher timeframe input (median diff >= 20h) — returns df unchanged.
+- Daily or higher timeframe input (bar duration >= 20h) — returns df unchanged.
 - Invalid `session_end_hour` (not after a session open, or > 24), unknown `session_timezone`, or `session_minute` outside 0-59 — raises ValueError.
 - DataFrame without a DatetimeIndex — raises ValueError.
 - sessions=None handling: compute()'s Python signature has sessions=None as its default; when called with sessions=None (e.g. a direct Python call bypassing the plugin system), the code substitutes [8, 9, 14, 15]. When invoked via the plugin system using get_default_params(), sessions is [0, 1, 2, 5, 6, 7, 8, 12, 13, 14]. The same [8, 9, 14, 15] fallback applies inside get_feature_columns() / _resolve_col_params() when sessions is absent from the passed params dict.

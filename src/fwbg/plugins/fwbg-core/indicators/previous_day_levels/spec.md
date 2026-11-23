@@ -55,7 +55,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 
 ## Acceptance Criteria
 
-- AC-001: Returns df unchanged when the median bar interval is >= 20 hours (daily timeframe).
+- AC-001: Returns df unchanged when the bar duration is >= 20 hours (daily timeframe).
 - AC-002: Raises ValueError when df.index is not a DatetimeIndex.
 - AC-003: Raises ValueError when range_scope contains a value outside {'session','all'}.
 - AC-004: For each (candle_span, range_scope, break_mode) variant, emits the 13 base pdl_* feature columns prefixed with <span>_<scope>_<break_pfx>.
@@ -79,7 +79,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 
 ## Edge Cases
 
-- Daily or higher-timeframe input (median bar diff >= 20h): compute returns the original df with no columns added.
+- Daily or higher-timeframe input (bar duration >= 20h): compute returns the original df with no columns added.
 - First day(s) of data have no previous-day reference: all pdl_* features are NaN on those bars.
 - Session that wraps midnight (session_start_hour >= session_end_hour): day grouping uses a (24 - session_start_hour) offset so the trading day aligns to session start.
 - skip_weekends=True with Monday bars: PDH/PDL are taken from Friday via ffill of trading days only.

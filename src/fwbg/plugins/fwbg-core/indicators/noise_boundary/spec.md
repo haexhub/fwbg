@@ -8,7 +8,7 @@ Intraday momentum bands around the cash-session open whose width is the average 
 
 ## Summary
 
-Converts the UTC bar index to a session time zone, anchors each session at max/min of its open and the previous session close, and widens the anchor by the time-of-day noise (mean of the last `lookback_sessions` observations of that slot). At half-hour checks it flags closes beyond the band (and beyond the session VWAP), and flags exits when the close falls back inside the trailing level, at the session's last bar and on every bar outside the session. Based on Zarattini, Aziz and Barbon (2024).
+Converts the UTC bar index to a session time zone, anchors each session at max/min of its open and the previous session close, and widens the anchor by the time-of-day noise (mean of the last `lookback_sessions` observations of that slot). At half-hour checks it flags closes beyond the band (and beyond the session VWAP), and flags exits when the close falls back inside the trailing level, at the session's last bar and on every bar outside the session. The default New York cash session follows scheduled NYSE early closes, skips entry at its closing bar and uses that close as the next session's anchor. Based on Zarattini, Aziz and Barbon (2024).
 
 ## Inputs
 

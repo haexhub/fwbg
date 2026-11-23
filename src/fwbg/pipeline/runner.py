@@ -1,8 +1,10 @@
 """Pipeline runner for orchestrating plugin execution in phase order."""
+
 from collections import defaultdict, deque
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
+from fwbg.data.resample import TIMEFRAME_ATTR
 from fwbg.pipeline.config import PipelineConfig, PluginConfig
 from fwbg.pipeline.registry import PluginRegistry
 
@@ -240,7 +242,10 @@ class PipelineRunner:
             # Execute each plugin on the fitting frame so later stateful
             # plugins see the features produced by earlier plugins.  This is
             # also the fit/transform behavior used by the fold pipeline.
+            timeframe = fit_ctx.df.attrs.get(TIMEFRAME_ATTR)
             fit_ctx = instance.execute(fit_ctx, **merged_params)
+            if timeframe is not None:
+                fit_ctx.df.attrs.setdefault(TIMEFRAME_ATTR, timeframe)
 
     def run(
         self,
@@ -286,7 +291,10 @@ class PipelineRunner:
             )
 
             # Execute plugin
+            timeframe = ctx.df.attrs.get(TIMEFRAME_ATTR)
             ctx = instance.execute(ctx, **merged_params)
+            if timeframe is not None:
+                ctx.df.attrs.setdefault(TIMEFRAME_ATTR, timeframe)
 
         return ctx
 

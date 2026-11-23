@@ -25,7 +25,7 @@ Consolidates classical range/band volatility measures (ATR, Bollinger, Keltner, 
 - `vol_est_windows` (list[int], default=[20, 50]): Rolling window sizes for Garman-Klass, Parkinson, and Yang-Zhang OHLC volatility estimators. Shorter windows react faster to regime changes; longer windows produce more stable estimates.
 - `compression_lookback` (int, default=100): Lookback in bars for rolling percentile-rank computation used by vol_atr_pct_*_rank, vol_bb_wband_*_rank, and the vol_compression flag. Consumed via **params — not declared in get_default_params/get_param_schema.
 - `rv_window` (int, default=20): Base window (in days) for realized-volatility calculation; the effective rolling window is rv_window*bars_per_day bars, then annualized by sqrt(252*bars_per_day)*100. Consumed via **params — not declared in get_default_params/get_param_schema.
-- `bars_per_day` (float, default=None): Bars per trading day for vol_rv_{rv_window}. None infers it from the index: median bars per calendar date for intraday bars (24 hourly around the clock, 96 M15), 1 for daily bars, 1/5 for weekly bars.
+- `bars_per_day` (float, default=None): Bars per trading day for vol_rv_{rv_window}. When omitted, the median number of bars in the first five completed calendar dates after the initial date fixes the intraday count. The nominal spacing gives 1 for daily bars and 1/5 for weekly bars. No realized volatility is emitted before the inferred scale is known.
 
 ## Outputs
 

@@ -37,6 +37,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import numpy as np
 import pandas as pd
 
+from fwbg.data.resample import bar_timing
+
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON, rl_tag
 from fwbg_sdk.retest import (
     apply_breakout_threshold,
@@ -207,6 +209,7 @@ def _compute_range_variant(
     session_end_hour: int = None,
     breakout_threshold: float = 0.0,
     breakout_threshold_abs: float = 0.0,
+    bar_duration: pd.Timedelta | None = None,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all PDL features for a single candle_span + scope + break mode.
 
@@ -337,6 +340,7 @@ def _compute_range_variant(
 
     # --- Breakout detection ---
     if resample_tf:
+        assert bar_duration is not None
         # Resample to get hourly Open/Close for breakout confirmation
         r_df = (
             df[["O", "C"]]
@@ -372,7 +376,6 @@ def _compute_range_variant(
 
         # Map back to original bars at the LAST bar of each resampled period
         # to avoid lookahead (hourly Close isn't known until the hour ends).
-        bar_duration = df.index[1] - df.index[0] if len(df) > 1 else pd.Timedelta(0)
         end_offset = pd.Timedelta(resample_tf) - bar_duration
         above = (
             pd.Series(
@@ -508,6 +511,7 @@ def _compute_pdl_features(
     breakout_threshold: float = 0.0,
     breakout_threshold_abs: float = 0.0,
     session_timezone: Optional[str] = None,
+    bar_duration: pd.Timedelta | None = None,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all previous day level features for all scope × break × retest modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
@@ -572,6 +576,7 @@ def _compute_pdl_features(
                 session_end_hour=session_end_hour,
                 breakout_threshold=breakout_threshold,
                 breakout_threshold_abs=breakout_threshold_abs,
+                bar_duration=bar_duration,
             )
             for k, v in mode_feats.items():
                 all_features[f"{combined_pfx}{k}"] = v
@@ -634,11 +639,11 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame must have a DatetimeIndex")
 
-        # Skip daily data — PDL is intraday only
-        if len(df) > 1:
-            median_diff = df.index.to_series().diff().median()
-            if median_diff >= pd.Timedelta(hours=20):
-                return df
+        step, ready = bar_timing(df)
+        if df.empty or step is None or step >= pd.Timedelta(hours=20):
+            return df
+        if resample_tf and pd.Timedelta(resample_tf) < step:
+            raise ValueError("resample_tf must be at least the input bar duration")
 
         atr = _compute_atr(df, atr_period)
         features = _compute_pdl_features(
@@ -660,6 +665,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             breakout_threshold=breakout_threshold,
             breakout_threshold_abs=breakout_threshold_abs,
             session_timezone=session_timezone,
+            bar_duration=step,
         )
 
         if not features:
@@ -668,6 +674,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         self._feature_columns = list(features.keys())
 
         features_df = shift_features(features, df.index)
+        features_df.iloc[:ready] = np.nan
         return pd.concat([df, features_df], axis=1)
 
     @classmethod

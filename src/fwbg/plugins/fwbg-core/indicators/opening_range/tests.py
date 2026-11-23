@@ -2619,6 +2619,7 @@ class TestAtrWarmUp:
 
     def test_atr_floor_invalidates_bars_inside_the_warm_up(self):
         df = _make_ohlc_hourly(n=72)
+        df.attrs["fwbg_timeframe"] = "HOUR_1"
         kw = dict(sessions=[0], range_bars=1, atr_period=14, enable_retracement=False)
         floored = _orb.OpeningRangeIndicator().compute(
             df, min_range_height_atr=1e-6, **kw

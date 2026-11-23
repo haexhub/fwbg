@@ -21,7 +21,6 @@ from fwbg_sdk import (
     register_indicator,
     shift_features,
     safe_divide,
-    EPSILON,
 )
 
 
@@ -112,24 +111,31 @@ class VwapIndicator(BaseIndicator):
         # Typical Price: Referenzpunkt für VWAP
         tp = (h + lo + c) / 3.0
 
-        # Gewichte: Volume wenn verfügbar, sonst equal-weight
-        has_volume = "V" in df.columns and df["V"].notna().any() and (df["V"] > 0).any()
-        if has_volume:
-            w = df["V"].copy().fillna(0.0).clip(lower=0.0)
-            w = w.where(w > 0, EPSILON)
-        else:
-            w = pd.Series(1.0, index=df.index)
-
-        # Session-ID: neue Session bei jedem neuen session_start_hour (Ortszeit)
         session_id = pd.Series(
             _session_keys(df.index, session_start_hour, session_tz), index=df.index
         )
+        base = tp.groupby(session_id).transform("first")
+        centered = tp - base
+        equal_count = tp.notna().groupby(session_id).cumsum()
+        equal_mean = safe_divide(centered.groupby(session_id).cumsum(), equal_count)
+        equal_sq = safe_divide((centered**2).groupby(session_id).cumsum(), equal_count)
+        mean, mean_sq = equal_mean, equal_sq
+        if "V" in df.columns:
+            weights = df["V"].fillna(0.0).clip(lower=0.0).where(tp.notna(), 0.0)
+            cum_weight = weights.groupby(session_id).cumsum()
+            # Use the unweighted session-to-date moments only until the first
+            # positive volume. Subsequent zero-volume bars add no weight.
+            valid_weight = cum_weight.where(cum_weight > 0)
+            weighted_mean = (centered.fillna(0.0) * weights).groupby(
+                session_id
+            ).cumsum() / valid_weight
+            weighted_sq = (centered.fillna(0.0) ** 2 * weights).groupby(
+                session_id
+            ).cumsum() / valid_weight
+            mean = weighted_mean.where(cum_weight > 0, equal_mean)
+            mean_sq = weighted_sq.where(cum_weight > 0, equal_sq)
 
-        # Kumulativer VWAP pro Session via groupby + cumsum
-        tp_w = tp * w
-        cum_tp_w = tp_w.groupby(session_id).transform("cumsum")
-        cum_w = w.groupby(session_id).transform("cumsum")
-        vwap = safe_divide(cum_tp_w, cum_w)
+        vwap = base + mean
         features["vwap"] = vwap
 
         # Normalisierte Abweichung: (Close - VWAP) / VWAP
@@ -145,18 +151,8 @@ class VwapIndicator(BaseIndicator):
                 deviation - roll_mean, roll_std
             )
 
-        # Volume-gewichtete Standardabweichung der Typical Prices der Session bis
-        # zur Bar: E[tp^2] - E[tp]^2 (gegen die laufende Session-Basis zentriert,
-        # damit die Differenz bei hohen Preisen numerisch stabil bleibt)
-        base = tp.groupby(session_id).transform("first")
-        centered = tp - base
-        mean_c = safe_divide(
-            (centered * w).groupby(session_id).transform("cumsum"), cum_w
-        )
-        mean_sq_c = safe_divide(
-            ((centered**2) * w).groupby(session_id).transform("cumsum"), cum_w
-        )
-        vwap_std = np.sqrt((mean_sq_c - mean_c**2).clip(lower=0))
+        # Use centered moments to avoid cancellation at large price levels.
+        vwap_std = np.sqrt((mean_sq - mean**2).clip(lower=0))
 
         # VWAP-Bands
         for mult in band_multipliers:

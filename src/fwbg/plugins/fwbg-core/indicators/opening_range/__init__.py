@@ -57,6 +57,7 @@ from fwbg_sdk.retest import (
     compute_retest_signals,
 )
 from fwbg.utils.indicator_math import wilder_atr
+from fwbg.data.resample import bar_timing
 
 
 # ── Naming helpers ──────────────────────────────────────────────────────────
@@ -112,15 +113,6 @@ ORB_STRUCTURAL_SUFFIXES = ("_sl_dist", "_or_high", "_or_low", "_or_midpoint", "_
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
     """Wilder ATR, NaN until a full window exists (raw price, not percent)."""
     return wilder_atr(df["H"], df["L"], df["C"], window=period)
-
-
-def _median_step_ns(index: pd.DatetimeIndex) -> int:
-    """Typical bar spacing in nanoseconds (median index difference, >= 1 minute fallback)."""
-    if len(index) >= 2:
-        step = index.to_series().diff().median()
-        if pd.notna(step) and step > pd.Timedelta(0):
-            return int(step.as_unit("ns").value)
-    return int(pd.Timedelta(minutes=1).value)
 
 
 @dataclass(frozen=True)
@@ -254,7 +246,8 @@ def _session_orb_features(
     session_minute: int = 0,
     session_timezone: Optional[str] = None,
     windows: Optional[Dict[int, _SessionWindows]] = None,
-    bar_step_ns: Optional[int] = None,
+    *,
+    bar_step_ns: int,
 ) -> tuple[Dict[str, Union[pd.Series, np.ndarray]], List[dict]]:
     """
     Compute session-specific ORB features.
@@ -278,8 +271,6 @@ def _session_orb_features(
     zones: List[dict] = []
 
     n = len(df)
-    if bar_step_ns is None:
-        bar_step_ns = _median_step_ns(df.index)
     range_dur_ns = range_bars * bar_step_ns
     pre_dur_ns = pre_range_bars * bar_step_ns
 
@@ -626,11 +617,9 @@ class OpeningRangeIndicator(BaseIndicator):
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame muss einen DatetimeIndex haben")
 
-        # Skip daily data — ORB is intraday only
-        if len(df) > 1:
-            median_diff = df.index.to_series().diff().median()
-            if median_diff >= pd.Timedelta(hours=20):
-                return df
+        step, ready = bar_timing(df)
+        if df.empty or step is None or step >= pd.Timedelta(hours=20):
+            return df
 
         if sessions is None:
             sessions = [8, 9, 14, 15]
@@ -641,7 +630,7 @@ class OpeningRangeIndicator(BaseIndicator):
         self._validate_session_params(
             sessions, session_end_hour, session_minute, session_timezone
         )
-        bar_step_ns = _median_step_ns(df.index)
+        bar_step_ns = step.value
         windows = {
             h: _session_windows(
                 df.index, h, session_minute, session_end_hour, session_timezone
@@ -696,7 +685,7 @@ class OpeningRangeIndicator(BaseIndicator):
                         session_minute,
                         session_timezone,
                         windows,
-                        bar_step_ns,
+                        bar_step_ns=bar_step_ns,
                     )
                     features.update(
                         {f"{pfx}{k}": v for k, v in session_features.items()}
@@ -730,8 +719,14 @@ class OpeningRangeIndicator(BaseIndicator):
         ]
         shifted = {k: v for k, v in features.items() if k not in no_shift}
         features_df = shift_features(shifted, df.index)
-        for k in no_shift:
-            features_df[k] = features[k]
+        features_df = pd.concat(
+            [
+                features_df,
+                pd.DataFrame({k: features[k] for k in no_shift}, index=df.index),
+            ],
+            axis=1,
+        )
+        features_df.iloc[:ready] = np.nan
         return pd.concat([df, features_df], axis=1)
 
     @staticmethod

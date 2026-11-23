@@ -260,7 +260,7 @@ def _look(
         "bars": len(fold.test_df),
         "embargo_bars": embargo,
         "trades": len(evaluation["trades"]),
-        # Candidate features the preparation dropped (e.g. all-NaN after the cutoff).
+        # Candidate features excluded by training-only cleaning or absent columns.
         "dropped_features": evaluation.get("dropped_features", []),
     }
 

@@ -7,12 +7,14 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+import pandas as pd
 
 from fwbg_sdk.enums import Timeframe
 
 from fwbg.api._paths import validate_id
 
 from fwbg.data.resample import (
+    TIMEFRAME_ATTR,
     TIMEFRAME_ORDER as _TIMEFRAME_ORDER,
     resample_ohlcv as _resample_ohlcv,
     parse_symbol_timeframe as _parse_symbol_timeframe,
@@ -74,15 +76,23 @@ def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
     return result
 
 
-def _forward_fill_to_chart_tf(indicator_df, chart_df, columns: list[str]):
+def _forward_fill_to_chart_tf(
+    indicator_df,
+    chart_df,
+    columns: list[str],
+    close_columns: set[str],
+    duration: pd.Timedelta,
+):
     """Forward-fill indicator columns from a higher timeframe onto the chart timeframe.
 
     Each higher-TF value is held constant for all lower-TF bars until the next
     higher-TF bar produces a new value.
     """
     for col in columns:
-        if col in indicator_df.columns:
-            chart_df[col] = indicator_df[col].reindex(chart_df.index, method="ffill")
+        source = indicator_df[col]
+        if col in close_columns:
+            source = source.set_axis(source.index + duration)
+        chart_df[col] = source.reindex(chart_df.index, method="ffill")
     return chart_df
 
 
@@ -525,6 +535,9 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             if params.get(p, 0) > 0:
                 params[p] = params[p] * asset.point
 
+    timeframe = _canon_tf(ind_tf if chart_df is not None else body.timeframe)
+    if timeframe is not None:
+        df.attrs[TIMEFRAME_ATTR] = timeframe
     result_df = plugin.compute(df, **params)
 
     # --- Extract feature columns ---
@@ -559,33 +572,24 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         else set()
     )
 
-    # --- Adjust shift for chart display ---
-    # A chart is a view, not a model input: every value is drawn on the bar
-    # whose close produced it. Columns shifted by the indicator
-    # (``shift_features``, the default) are moved back one bar; this holds for
-    # signal columns too, so a flip decided at the close of bar N is marked on
-    # bar N, not on N+1 (the bar it is visible to a model) or N+2. Columns the
-    # indicator already emits unshifted (``get_unshifted_columns``) are left
-    # alone.
-    _undo_feature_shift(result_df, available_cols, unshifted_cols)
-    # Overlay columns: undo the shift too, so a single-timeframe line sits at the
-    # bar whose close produced it. With an indicator timeframe the rows are
-    # higher-timeframe candles that get held across all chart bars of the
-    # candle; undoing the shift there would draw a level computed from the
-    # candle's close during that same candle, so the model-facing shift stays.
+    all_ind_cols = list(dict.fromkeys(available_cols + overlay_cols))
     if chart_df is None:
-        _undo_feature_shift(result_df, overlay_cols, unshifted_cols)
-
-    # --- MTF: forward-fill indicator columns to chart timeframe ---
-    # Continuous columns (plot + overlay) are forward-filled so each lower-TF bar
-    # holds the last higher-TF value. Signal columns are NOT forward-filled —
-    # they only appear at the higher-TF bar boundary (point values, not blocks).
-    if chart_df is not None:
-        # MTF: all indicator columns (including signals) are forward-filled
-        # onto the chart timeframe.  A daily supertrend value of 1.0 is valid
-        # for every M15 bar of that day, not just at midnight.
-        all_ind_cols = list(set(available_cols + overlay_cols))
-        _forward_fill_to_chart_tf(result_df, chart_df, all_ind_cols)
+        # Display each value on the bar whose close produced it.
+        _undo_feature_shift(result_df, all_ind_cols, unshifted_cols)
+    else:
+        # Shifted features already belong to the following higher-timeframe bar.
+        # Unshifted close decisions first become available at the source bar's
+        # end. Calendar and structural levels can be displayed at its start.
+        calendar_cols = (
+            set(_call_plugin_method(plugin.get_calendar_columns, params))
+            if hasattr(plugin, "get_calendar_columns")
+            else set()
+        )
+        close_cols = (unshifted_cols & plugin_signal_cols) - calendar_cols
+        duration = pd.Timedelta(minutes=Timeframe.from_str(ind_tf).minutes)
+        _forward_fill_to_chart_tf(
+            result_df, chart_df, all_ind_cols, close_cols, duration
+        )
         result_df = chart_df
 
     # --- Slice ---
