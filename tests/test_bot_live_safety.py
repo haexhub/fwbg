@@ -277,7 +277,7 @@ def test_train_and_stream_use_the_configured_indicator_params(tmp_path, monkeypa
     index = pd.date_range(HOUR - timedelta(hours=50), periods=50, freq="h")
     close = np.linspace(1.0, 1.1, len(index))
     history = pd.DataFrame(
-        {"O": close, "H": close + 0.1, "L": close - 0.02, "C": close, "V": 2.0},
+        {"O": close, "H": close + 0.1, "L": close - 0.02, "C": close},
         index=index,
     )
     adapter = MagicMock()
@@ -289,11 +289,12 @@ def test_train_and_stream_use_the_configured_indicator_params(tmp_path, monkeypa
         adapter=adapter,
         assets_config={
             "EURUSD": {
-                "features": ["ibs_prev", "ema_dist_3"],
+                "features": ["ibs_prev", "ema_dist_3", "vwap"],
                 "timeframe": "HOUR_1",
                 "indicators": [
                     {"name": "ibs", "signal_columns_as_features": True},
                     {"name": "ema", "params": {"lines": [{"period": 3}]}},
+                    {"name": "vwap"},
                 ],
             }
         },
@@ -303,7 +304,7 @@ def test_train_and_stream_use_the_configured_indicator_params(tmp_path, monkeypa
     )
     assert bot._train_model("EURUSD", bot.assets["EURUSD"])
     train = model.train.call_args.args[0]
-    assert train.columns.tolist() == ["ibs_prev", "ema_dist_3"]
+    assert train.columns.tolist() == ["ibs_prev", "ema_dist_3", "vwap"]
     np.testing.assert_allclose(train["ibs_prev"], 1.0 / 6.0)
     assert "ema_dist_21" not in bot.features_cache["EURUSD"]
 
@@ -312,12 +313,14 @@ def test_train_and_stream_use_the_configured_indicator_params(tmp_path, monkeypa
     )
     updated = bot.features_cache["EURUSD"]
     assert updated.loc[HOUR, "V"] == 7.0
+    assert bot.ohlc_cache["EURUSD"].loc[index, "V"].isna().all()
     np.testing.assert_allclose(updated.loc[HOUR, "ibs_prev"], 1.0 / 6.0)
     assert pd.notna(updated.loc[HOUR, "ema_dist_3"])
 
 
 def test_optimizer_exports_actual_indicator_configuration_for_the_bot(monkeypatch):
     from fwbg.core.config import StrategyConfig
+    from fwbg.data import config as data_config
     from fwbg.optimization.process import process_symbol
     from tests.optimization.symbol_harness import (
         METADATA,
@@ -333,8 +336,25 @@ def test_optimizer_exports_actual_indicator_configuration_for_the_bot(monkeypatc
     strategy = StrategyConfig.from_dict(
         {**METADATA, "pipeline": {"indicators": indicators}}
     )
+    monkeypatch.setattr(data_config, "TIMEFRAME", "HOUR_1")
     patch_development(monkeypatch, WINNING)
     result = process_symbol(SYMBOL_FILE, strategy)
     assert result["status"] == "ok", result
     assert result["config"]["indicators"] == indicators
     assert result["config"]["timeframe"] == "HOUR_1"
+
+
+def test_signal_check_is_skipped_when_cache_refresh_fails(tmp_path, monkeypatch):
+    import fwbg.bot as bot_module
+
+    adapter = _adapter(FILLED)
+    adapter.get_historical_bars.side_effect = RuntimeError("broker unavailable")
+    bot = _bot(adapter, tmp_path)
+    bot.last_bar_time["EURUSD"] = HOUR - timedelta(hours=3)
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: HOUR)
+    bot._check_signal = MagicMock()
+
+    bot._check_all_signals()
+
+    bot._check_signal.assert_not_called()
+    assert "EURUSD" not in bot.last_signal_hour

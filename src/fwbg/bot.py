@@ -580,6 +580,10 @@ class TradingBot:
         # Neue Bar hinzufügen
         if bar.timestamp not in cache_df.index:
             cache_df = cache_df.copy()
+            if "V" not in cache_df.columns:
+                # Historical broker bars may be OHLC-only. Keep their VWAP
+                # equal-weight fallback while allowing new bars to use volume.
+                cache_df["V"] = float("nan")
             values = {
                 "O": bar.open,
                 "H": bar.high,
@@ -609,19 +613,20 @@ class TradingBot:
                 continue
 
             # Cache aktualisieren wenn nötig
-            self._update_cache_if_needed(symbol)
+            if not self._update_cache_if_needed(symbol):
+                continue
 
             # Signal prüfen
             self._check_signal(symbol)
 
-    def _update_cache_if_needed(self, symbol: str):
-        """Aktualisiert den Cache wenn eine neue Stunde begonnen hat."""
+    def _update_cache_if_needed(self, symbol: str) -> bool:
+        """Refresh the cache and report whether signal data is current."""
         current_hour = _current_utc_hour()
 
         # The newest complete bar opened an hour ago; the current one is still forming.
         last_time = self.last_bar_time.get(symbol)
         if last_time is not None and last_time >= current_hour - timedelta(hours=1):
-            return  # Cache ist aktuell
+            return True  # Cache ist aktuell
 
         # Neue Daten holen
         try:
@@ -640,9 +645,12 @@ class TradingBot:
                 self.ohlc_cache[symbol] = df
                 self.last_bar_time[symbol] = df.index[-1]
                 self.features_cache[symbol] = features
+                return True
+            return False
 
         except Exception as e:
             logger.warning(f"⚠️ {symbol}: Cache update failed: {e}")
+            return False
 
     def _check_signal(self, symbol: str):
         """

@@ -13,6 +13,7 @@ leaks future information into backtests.
 See ``docs/plans/2026-05-15-cot-macro-audit.md`` for the audit that produced
 this contract.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -63,7 +64,9 @@ def merge_respect_release(
 
     index_name = bars.index.name or "_bar_ts"
     bars_sorted = bars.sort_index()
-    left = bars_sorted.reset_index().rename(columns={bars_sorted.index.name or "index": index_name})
+    left = bars_sorted.reset_index().rename(
+        columns={bars_sorted.index.name or "index": index_name}
+    )
 
     macro_sorted = macro[[RELEASE_COL] + value_cols].sort_values(RELEASE_COL)
 
@@ -77,4 +80,7 @@ def merge_respect_release(
     merged = merged.drop(columns=[RELEASE_COL])
     merged = merged.set_index(index_name)
     merged.index.name = bars.index.name
+    # merge_asof may discard DataFrame metadata, including the source timeframe
+    # used later by indicator plugins. Preserve the bar frame's metadata.
+    merged.attrs = bars.attrs.copy()
     return merged
