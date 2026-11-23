@@ -508,3 +508,26 @@ class TestFeatureColumnsFollowParams:
     def test_defaults_unchanged(self, indicator):
         assert indicator.get_feature_columns() == indicator.get_feature_columns({})
         assert "vwap_zscore_50" in indicator.get_feature_columns()
+
+
+def test_volume_appearing_later_never_revises_the_unweighted_prefix(indicator):
+    idx = pd.date_range("2025-01-06 09:00", periods=6, freq="h")
+    price = np.array([100.0, 102.0, 104.0, 106.0, 108.0, 110.0])
+    df = pd.DataFrame(
+        {
+            "O": price,
+            "H": price + 1,
+            "L": price - 1,
+            "C": price,
+            "V": [0.0, np.nan, 5.0, 0.0, 10.0, 0.0],
+        },
+        index=idx,
+    )
+    prefix = indicator.compute(df.iloc[:2])
+    out = indicator.compute(df)
+    pd.testing.assert_frame_equal(out.loc[prefix.index], prefix)
+    np.testing.assert_allclose(
+        out["vwap"], [np.nan, 100.0, 101.0, 104.0, 104.0, (104.0 + 2 * 108.0) / 3]
+    )
+    assert out["vwap_upper_1"].iloc[2] == 102.0
+    assert out["vwap_upper_1"].iloc[4] == 104.0

@@ -1,4 +1,5 @@
 """Tests for the release-date contract used by the macro/COT merge layer."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -53,6 +54,7 @@ def test_second_release_supersedes_first():
 
 def test_index_and_input_preserved():
     bars = _make_bars("2024-01-01", 3)
+    bars.attrs["timeframe"] = "MINUTE_15"
     macro = pd.DataFrame(
         {RELEASE_COL: pd.to_datetime(["2024-01-02"]), "value": [100.0]}
     )
@@ -63,6 +65,7 @@ def test_index_and_input_preserved():
     assert "C" in merged.columns
     # Index name preserved.
     assert merged.index.name == "T"
+    assert merged.attrs["timeframe"] == "MINUTE_15"
 
 
 def test_missing_release_date_column_raises():
@@ -92,16 +95,12 @@ def test_non_datetime_release_date_raises():
 
 def test_value_col_missing_raises():
     bars = _make_bars("2024-01-01", 1)
-    macro = pd.DataFrame(
-        {RELEASE_COL: pd.to_datetime(["2024-01-02"]), "value": [1.0]}
-    )
+    macro = pd.DataFrame({RELEASE_COL: pd.to_datetime(["2024-01-02"]), "value": [1.0]})
     with pytest.raises(ValueError, match="not found"):
         merge_respect_release(bars, macro, "bad", ["other"])
 
 
 def test_assert_release_dates_present_happy_path():
-    df = pd.DataFrame(
-        {RELEASE_COL: pd.to_datetime(["2024-01-01"]), "value": [1.0]}
-    )
+    df = pd.DataFrame({RELEASE_COL: pd.to_datetime(["2024-01-01"]), "value": [1.0]})
     # Should not raise.
     assert_release_dates_present(df, "ok")

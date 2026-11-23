@@ -15,6 +15,7 @@ import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
 from fwbg.utils.indicator_math import wilder_atr
+from fwbg.data.resample import bar_timing
 
 
 def _supertrend(
@@ -55,9 +56,9 @@ def _supertrend(
         supertrend_line[start] = final_lower[start]
 
         for i in range(start + 1, n):
-            if final_lower[i] < final_lower[i - 1] and px[i - 1] > final_lower[i - 1]:
+            if final_lower[i] < final_lower[i - 1] and px[i - 1] >= final_lower[i - 1]:
                 final_lower[i] = final_lower[i - 1]
-            if final_upper[i] > final_upper[i - 1] and px[i - 1] < final_upper[i - 1]:
+            if final_upper[i] > final_upper[i - 1] and px[i - 1] <= final_upper[i - 1]:
                 final_upper[i] = final_upper[i - 1]
 
             if direction[i - 1] == 1:
@@ -186,7 +187,7 @@ class SupertrendMTFIndicator(BaseIndicator):
     Bars Dauer (Bucket = ``Index.floor(d1_bars * Bar-Dauer)``, bis 1 Tag
     kalenderbündig), berechnet Supertrend/ATR auf diesen Kerzen und hält jeden
     Wert ab dem letzten Basis-Bar seiner Kerze (Forward-Fill). Eine noch laufende
-    Kerze fließt nie ein. Die Bar-Dauer ist der Median der Index-Abstände.
+    Kerze fließt nie ein. Die Bar-Dauer stammt aus dem Timeframe oder den ersten beobachteten Abständen.
 
     Bars pro Zeiteinheit (M15-Basis):
         H4 → d1_bars=16, D1 → d1_bars=96
@@ -218,9 +219,9 @@ class SupertrendMTFIndicator(BaseIndicator):
         nan = pd.Series(np.nan, index=df.index)
         direction, st_line, htf_atr = nan, nan, nan
 
-        steps = df.index.to_series().diff().dropna()
-        if len(steps) > 0 and steps.median() > pd.Timedelta(0):
-            span = d1_bars * steps.median()
+        step, ready = bar_timing(df)
+        if step is not None:
+            span = d1_bars * step
             bars = _completed_bars(df, span)
             if len(bars) >= period:
                 htf_dir, htf_line = _supertrend(
@@ -241,6 +242,7 @@ class SupertrendMTFIndicator(BaseIndicator):
         }
 
         features_df = shift_features(features, df.index)
+        features_df.iloc[:ready] = np.nan
         return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self, params=None) -> List[str]:

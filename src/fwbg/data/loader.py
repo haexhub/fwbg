@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 
 from .macro_contract import RELEASE_COL, merge_respect_release
+from .resample import TIMEFRAME_ATTR, parse_symbol_timeframe
 
 log = logging.getLogger(__name__)
 
@@ -171,6 +172,9 @@ def load_data_aligned(path: str) -> pd.DataFrame | None:
 
         # Validate OHLC data
         _validate_ohlc(df, path)
+        parsed = parse_symbol_timeframe(os.path.splitext(os.path.basename(path))[0])
+        if parsed is not None:
+            df.attrs[TIMEFRAME_ATTR] = parsed[1]
 
         return df
     except (FileNotFoundError, pd.errors.EmptyDataError) as exc:
@@ -328,8 +332,11 @@ def run_data_loading(df, data_loading_configs):
                     f"belongs to an optional plugin package, that package must be "
                     f"installed in this environment. ({exc})"
                 ) from exc
+            timeframe = df.attrs.get(TIMEFRAME_ATTR)
             ctx = PipelineContext(df=df, symbol="", asset_class="")
             ctx = cls().execute(ctx, **params)
             df = ctx.df
+            if timeframe is not None:
+                df.attrs.setdefault(TIMEFRAME_ATTR, timeframe)
 
     return df

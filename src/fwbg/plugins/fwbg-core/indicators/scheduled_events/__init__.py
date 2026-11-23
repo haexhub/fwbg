@@ -19,11 +19,11 @@ Columns:
   after it, 0 on an event day; NaN when the file holds no later event
 - ``evt_window``: 1 when an event lies between ``window_end`` and ``window_start``
   trading days ahead (inclusive), else 0; overlapping windows of clustered events
-  merge into one; NaN, like the two columns below, after the file's last event
+  merge into one; NaN after the file's last event
   (``evt_days_ahead`` is NaN there), because later events are unknown, not absent
 - ``evt_window_start``: 1 on the bar where ``evt_window`` turns on (an entry column)
 - ``evt_window_end``: 1 on the bar where ``evt_window`` turns off (an exit column
-  for ``signal_exit``)
+  for ``signal_exit``). The final window can end after the last event.
 
 Holding from ``evt_window_start`` to ``evt_window_end`` with ``window_start=6`` and
 ``window_end=2`` is exposed to the returns of the five trading days before each event.
@@ -168,7 +168,10 @@ class ScheduledEventsIndicator(BaseIndicator):
             out["evt_days_ahead"] = ahead
             out["evt_window"] = np.where(known, in_window, np.nan)
             out["evt_window_start"] = np.where(known, in_window & ~before, np.nan)
-            out["evt_window_end"] = np.where(known, ~in_window & before, np.nan)
+            # The last known window can end after the final event. Its
+            # transition is known even though no later event is in the file.
+            ended = ~in_window & before
+            out["evt_window_end"] = np.where(known | ended, ended, np.nan)
         if len(out):
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN
         return pd.concat([df, out], axis=1)

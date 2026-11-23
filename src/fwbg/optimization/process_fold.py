@@ -8,6 +8,7 @@ import pandas as pd
 
 from fwbg.data import config as data_config
 from fwbg.data.config import MIN_TRADES
+from fwbg.data.resample import TIMEFRAME_ATTR
 from fwbg_sdk.enums import Timeframe
 from fwbg.core.columns import named_columns
 from fwbg.core.config import RegimeFilterConfig
@@ -235,6 +236,10 @@ def _prepare_fold_common(
                 raise PreprocessingError(
                     f"preprocessor {pp_name!r} failed on fold {fold.fold_id}: {e}"
                 ) from e
+            for before, after in ((pp_train_raw, train_out), (pp_test_raw, test_out)):
+                timeframe = before.attrs.get(TIMEFRAME_ATTR)
+                if timeframe is not None:
+                    after.attrs.setdefault(TIMEFRAME_ATTR, timeframe)
             pp_train_raw = train_out
             pp_test_raw = test_out
 
@@ -267,6 +272,10 @@ def _prepare_fold_common(
         test_df = pd.concat(
             [test_df, precomputed_raw_df.reindex(test_df.index)], axis=1
         )
+        for before, after in ((pp_train_raw, train_df), (pp_test_raw, test_df)):
+            timeframe = before.attrs.get(TIMEFRAME_ATTR)
+            if timeframe is not None:
+                after.attrs[TIMEFRAME_ATTR] = timeframe
 
     stateful_output_columns = []
     if fold_stateful:
@@ -339,12 +348,6 @@ def _prepare_fold_common(
             else:
                 clean_pool.append(col)
     full_pool = clean_pool
-
-    for col in list(full_pool):
-        if col in test_df.columns and test_df[col].isna().all():
-            full_pool.remove(col)
-            drop_cols.append(col)
-            excluded_nan += 1
 
     full_pool = [c for c in full_pool if c not in unshifted]
 
@@ -469,8 +472,8 @@ def prepare_fold_data(
 ):
     """Prepare train/test DataFrames for ML models.
 
-    Drops columns with >10% NaN or inf in train or without any value in test,
-    then the indicator warm-up rows; NaN inside the frame stays for the models.
+    Drops columns with at least 10% NaN or any inf in train, then the indicator
+    warm-up rows. Missing test values stay available to the model.
     """
     common = _prepare_fold_common(
         fold,

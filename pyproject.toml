@@ -50,7 +50,7 @@ dependencies = [
     "tqdm>=4.66",
     "psutil>=7.0",
     "PyYAML>=6.0",
-    "holidays>=0.70",
+    "holidays>=0.90",  # NYSE half-day schedules for noise_boundary
     # Keep this dependency on 4.x until the adapter supports Dukascopy 5.x.
     "dukascopy-python>=4.0,<5",
     # HTTP client (scripts/jev provider client)

@@ -1045,24 +1045,26 @@ class TestSignalModelSkipsDropna:
         assert len(test_df) == n_test
         assert test_df["feat2"].isna().sum() == 3
 
-    def test_feed_ending_before_test_leaves_pool_but_keeps_bars(self):
-        """A feature without any value in test is dropped; the test bars all stay."""
+    def test_feed_ending_before_test_keeps_training_features_and_test_bars(self):
+        """Future missing values cannot affect the training frame or pool."""
         from fwbg.optimization.process_fold import prepare_fold_data
 
         fold, n_test = self._two_feature_fold(feat2_nan=slice(140, None))
         ctx = _make_ctx(model_type="xgboost", min_trades=5)
 
-        _, test_df, full_pool = prepare_fold_data(
-            fold,
-            fold_indicators=[],
-            precomputed_raw_df=None,
-            preprocessing_configs=None,
-            ctx=ctx,
-            sym="TEST",
+        complete, _ = self._two_feature_fold(feat2_nan=[])
+        expected_train, _, expected_pool = prepare_fold_data(
+            complete, [], None, None, ctx, "TEST"
+        )
+        train_df, test_df, full_pool = prepare_fold_data(
+            fold, [], None, None, ctx, "TEST"
         )
 
-        assert "feat2" not in full_pool
+        pd.testing.assert_frame_equal(train_df, expected_train)
+        assert full_pool == expected_pool
+        assert "feat2" in full_pool
         assert len(test_df) == n_test
+        assert test_df["feat2"].isna().all()
 
     def test_preprocessing_failing_on_test_raises_and_keeps_neither_split(self):
         """A step failing on one split fails the fold; neither split is half-processed."""

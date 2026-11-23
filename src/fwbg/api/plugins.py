@@ -128,7 +128,12 @@ def _plugin_to_dict(fqn: str) -> dict:
     manifest = registry.get_plugin_manifest(fqn)
 
     defaults = plugin_cls.get_default_params()
-    param_schema = plugin_cls.get_param_schema()
+    param_schema = {
+        name: {**schema, "type": "list[string]"}
+        if schema.get("type") == "list[str]"
+        else schema
+        for name, schema in plugin_cls.get_param_schema().items()
+    }
     plugin_instance = plugin_cls()
 
     # Get feature columns for indicator plugins

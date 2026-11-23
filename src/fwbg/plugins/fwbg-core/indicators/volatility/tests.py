@@ -474,14 +474,16 @@ class TestRealizedVolBarsPerDay:
         ],
     )
     def test_infer_bars_per_day(self, index, expected):
-        assert _vol._infer_bars_per_day(index) == pytest.approx(expected)
+        bars_per_day, _ = _vol._infer_bars_per_day(pd.DataFrame(index=index))
+        assert bars_per_day == pytest.approx(expected)
 
     def test_infer_bars_per_day_for_a_seven_hour_session(self):
         days = pd.bdate_range("2024-01-01", periods=10)
         index = pd.DatetimeIndex(
             [d + pd.Timedelta(hours=h) for d in days for h in range(8, 15)]
         )
-        assert _vol._infer_bars_per_day(index) == 7.0
+        bars_per_day, _ = _vol._infer_bars_per_day(pd.DataFrame(index=index))
+        assert bars_per_day == 7.0
 
 
 def _reference_yang_zhang(open_, high, low, close, window):

@@ -425,7 +425,7 @@ def test_the_real_holdout_fold_trains_before_the_embargo_and_tests_after_the_cut
     assert result["status"] == "ok" and result["holdout"]["dropped_features"] == []
 
 
-def test_candidate_features_the_holdout_cannot_use_are_recorded(monkeypatch):
+def test_frozen_candidate_keeps_a_feature_missing_throughout_the_holdout(monkeypatch):
     fold_result = symbol_harness.fold_result
 
     def with_feed(fold):
@@ -437,5 +437,6 @@ def test_candidate_features_the_holdout_cannot_use_are_recorded(monkeypatch):
     calls = spy_evaluation(monkeypatch)
     result = process_symbol_holdout(SYMBOL_FILE, LOOK)
     assert result["development"]["config"]["features"] == ["f1", "f2"]
-    assert calls[0]["candidate"]["selected_features_long"] == ["f1"]
-    assert result["holdout"]["dropped_features"] == ["f2"]
+    assert calls[0]["candidate"]["selected_features_long"] == ["f1", "f2"]
+    assert calls[0]["holdout_df"]["f2"].isna().all()
+    assert result["holdout"]["dropped_features"] == []

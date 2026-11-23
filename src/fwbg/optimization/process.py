@@ -22,6 +22,7 @@ from fwbg.core.config import StrategyConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
 from fwbg.data.loader import apply_date_window, load_data_aligned, run_data_loading
+from fwbg.data.resample import TIMEFRAME_ATTR, resample_ohlcv
 from fwbg.data.trading_hours import asset_sessions
 from fwbg.data.validation import DataCheckError, check_bars
 from fwbg_sdk.enums import Timeframe
@@ -491,8 +492,6 @@ def load_symbol_frame(
 
     # Resample to target timeframe if loaded from a lower one
     if data_config.RESAMPLE_FROM:
-        from fwbg.data.resample import resample_ohlcv
-
         n_before = len(df)
         df = resample_ohlcv(df, data_config.TIMEFRAME)
         log(
@@ -526,6 +525,7 @@ def load_symbol_frame(
         df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
         log(2, f"Dropped {n_before - len(df)} flat bars ({n_before} → {len(df)})", sym)
 
+    df.attrs[TIMEFRAME_ATTR] = data_config.TIMEFRAME
     log(2, f"Daten geladen: {len(df)} Zeilen ({time.time() - t0:.1f}s)", sym)
     df = _checked(df, strategy, sym)
     data_checks = df.attrs.get("data_checks")
@@ -1467,6 +1467,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "ct_short": ct_short,
                 "separate_long_short": bool(ct_long or ct_short),
                 "features": features_list,
+                "indicators": ctx.indicator_plugins,
+                "data_loading": strategy.get_data_loading(),
+                "preprocessing": preprocessing_configs,
+                "timeframe": data_config.TIMEFRAME,
                 "circuit_breaker": circuit_breaker,
                 "risk_adjustment": risk_adjustment,
                 "vol_targeting": risk_result.get("vol_targeting"),

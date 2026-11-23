@@ -185,7 +185,9 @@ def add_shifted_signal_columns(df: pd.DataFrame, indicators: Iterable) -> pd.Dat
             copies[prev] = df[col].shift(1)
     if not copies:
         return df
-    return pd.concat([df, pd.DataFrame(copies, index=df.index)], axis=1)
+    result = pd.concat([df, pd.DataFrame(copies, index=df.index)], axis=1)
+    result.attrs = df.attrs.copy()
+    return result
 
 
 # Regime bitmask constants (like Linux file permissions)

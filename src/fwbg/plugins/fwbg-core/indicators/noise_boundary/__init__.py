@@ -16,7 +16,8 @@ for a decision at that close, e.g. ``entry_delay=0``):
   (and beyond the VWAP when ``use_vwap``)
 - ``nb_exit_long`` / ``nb_exit_short``: 1 at check bars where the close is back
   inside the trailing level (band, or band and VWAP), at the session's last bar
-  and on every bar outside the session
+  and on every bar outside the session. The default cash session follows NYSE
+  early closes from the exchange calendar.
 
 The index is read as UTC (naive timestamps are UTC, as the loader provides them)
 and converted to ``session_tz``; a bar is labelled by its start time. The bar
@@ -26,12 +27,15 @@ built, a warning is logged and every column is NaN.
 """
 
 import logging
+import re
 from typing import List
 
+import holidays
 import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator
+from fwbg.data.resample import bar_timing
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +55,18 @@ def _minutes(hhmm: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
-def _bar_length(index: pd.DatetimeIndex) -> pd.Timedelta:
-    steps = pd.Series(index).diff().dropna()
-    if steps.empty:
-        raise ValueError(
-            "noise_boundary needs at least two bars to infer the bar length"
-        )
-    return steps.mode().iloc[0]
+def _nyse_early_closes(years: list[int]) -> dict:
+    """Known local closing minutes, including historical non-13:00 closes."""
+    half_days = holidays.financial_holidays(
+        "NYSE", years=years, categories="half_day", language="en_US"
+    )
+    closes = {}
+    for date, label in half_days.items():
+        match = re.search(r"markets close at (\d{1,2}):(\d{2})pm", label)
+        if match:
+            hour, minute = map(int, match.groups())
+            closes[date] = (hour % 12 + 12) * 60 + minute
+    return closes
 
 
 @register_indicator("noise_boundary")
@@ -82,7 +91,8 @@ class NoiseBoundaryIndicator(BaseIndicator):
         use_vwap: bool = True,
         **params,
     ) -> pd.DataFrame:
-        if df.empty:
+        bar, _ = bar_timing(df)
+        if df.empty or bar is None:
             return pd.concat(
                 [df, pd.DataFrame(index=df.index, columns=NB_COLUMNS, dtype=float)],
                 axis=1,
@@ -92,16 +102,27 @@ class NoiseBoundaryIndicator(BaseIndicator):
             if df.index.tz is None
             else df.index.tz_convert("UTC")
         )
-        bar = _bar_length(df.index)
         end = (utc + bar).tz_convert(session_tz)
         end_min = np.asarray(end.hour * 60 + end.minute)
         open_min, close_min = _minutes(session_open), _minutes(session_close)
+        bar_minutes = bar / pd.Timedelta(minutes=1)
+        close_by_row = np.full(len(df), close_min)
+        if (session_tz, session_open, session_close) == (
+            "America/New_York",
+            "09:30",
+            "16:00",
+        ):
+            early_closes = _nyse_early_closes(end.year.unique().tolist())
+            early = pd.Series(end.date).map(early_closes)
+            # With coarse bars, flatten on the last bar that finishes at or
+            # before the scheduled close, never in a bar that straddles it.
+            last_end = open_min + ((early - open_min) // bar_minutes) * bar_minutes
+            close_by_row = last_end.fillna(close_min).to_numpy()
         in_session = (
             (end_min > open_min)
-            & (end_min <= close_min)
+            & (end_min <= close_by_row)
             & np.asarray(end.dayofweek < 5)
         )
-        bar_minutes = bar / pd.Timedelta(minutes=1)
         observed = end_min[in_session]
         problem = None
         if bar_minutes > close_min - open_min:
@@ -110,7 +131,7 @@ class NoiseBoundaryIndicator(BaseIndicator):
                 f"{session_open}-{session_close}; the indicator needs intraday bars"
             )
         elif ((open_min + bar_minutes - observed) % bar_minutes != 0).any() or (
-            (close_min - observed) % bar_minutes != 0
+            (close_by_row[in_session] - observed) % bar_minutes != 0
         ).any():
             problem = (
                 f"the {bar} bar grid does not match the session "
@@ -131,6 +152,7 @@ class NoiseBoundaryIndicator(BaseIndicator):
             {
                 "day": np.asarray(end.tz_localize(None).normalize()),
                 "tod": end_min,
+                "end": close_by_row,
                 "O": df["O"].values,
                 "H": df["H"].values,
                 "L": df["L"].values,
@@ -143,7 +165,7 @@ class NoiseBoundaryIndicator(BaseIndicator):
         first_end = open_min + int(bar / pd.Timedelta(minutes=1))
         opening_bars = session[session["tod"] == first_end]
         session_open_px = opening_bars.groupby("day")["O"].first()
-        closing_bars = session[session["tod"] == close_min]
+        closing_bars = session[session["tod"] == session["end"]]
         session_close_px = closing_bars.groupby("day")["C"].last()
         days = session_open_px.index
         # The last session close strictly before each day (a day may lack its own close bar).
@@ -202,7 +224,7 @@ class NoiseBoundaryIndicator(BaseIndicator):
         below_vwap = (close < vwap) if use_vwap else np.ones(len(close), dtype=bool)
         long_trail = np.maximum(upper, vwap) if use_vwap else upper
         short_trail = np.minimum(lower, vwap) if use_vwap else lower
-        last_bar = tod == close_min
+        last_bar = tod == session["end"].to_numpy()
 
         out = pd.DataFrame(np.nan, index=df.index, columns=NB_COLUMNS)
         rows = np.flatnonzero(in_session)
@@ -210,8 +232,8 @@ class NoiseBoundaryIndicator(BaseIndicator):
         out.iloc[rows, out.columns.get_loc("nb_lower")] = lower
         out.iloc[rows, out.columns.get_loc("nb_vwap")] = vwap
         flags = {
-            "nb_long": check & (close > upper) & above_vwap,
-            "nb_short": check & (close < lower) & below_vwap,
+            "nb_long": check & ~last_bar & (close > upper) & above_vwap,
+            "nb_short": check & ~last_bar & (close < lower) & below_vwap,
             "nb_exit_long": (check & (close < long_trail)) | last_bar,
             "nb_exit_short": (check & (close > short_trail)) | last_bar,
         }

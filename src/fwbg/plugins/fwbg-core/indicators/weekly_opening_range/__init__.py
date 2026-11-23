@@ -21,13 +21,14 @@ Unterschied zu Opening Range (ORB):
 Timeframe-Kompatibilität: Intraday (M1-H4). Auf DAY-Bars oder WEEK-Bars → NaN.
 """
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
 from fwbg.utils.indicator_math import wilder_atr
+from fwbg.data.resample import bar_timing
 
 
 # ── Naming helpers ──────────────────────────────────────────────────────────
@@ -61,15 +62,6 @@ def _get_week_id(df: pd.DataFrame) -> pd.Series:
     )
 
 
-def _bar_step(index: pd.DatetimeIndex) -> pd.Timedelta:
-    """Typical bar spacing (median index difference, 1 minute fallback)."""
-    if len(index) >= 2:
-        step = index.to_series().diff().median()
-        if pd.notna(step) and step > pd.Timedelta(0):
-            return step
-    return pd.Timedelta(minutes=1)
-
-
 def _range_window(
     df: pd.DataFrame, week_id: pd.Series, range_bars: int, step: pd.Timedelta
 ) -> tuple[pd.Series, pd.Series]:
@@ -88,8 +80,8 @@ def _weekly_orb_features(
     df: pd.DataFrame,
     range_bars: int,
     atr: pd.Series,
-    week_id: Optional[pd.Series] = None,
-    step: Optional[pd.Timedelta] = None,
+    week_id: pd.Series,
+    step: pd.Timedelta,
 ) -> Dict[str, pd.Series]:
     """
     Compute weekly opening range features.
@@ -101,10 +93,6 @@ def _weekly_orb_features(
     """
     features: Dict[str, pd.Series] = {}
 
-    if week_id is None:
-        week_id = _get_week_id(df)
-    if step is None:
-        step = _bar_step(df.index)
     or_mask, valid = _range_window(df, week_id, range_bars, step)
 
     # Opening range: H/L of the bars in the range window of each week
@@ -141,8 +129,8 @@ def _weekly_stat_features(
     df: pd.DataFrame,
     week_id: pd.Series,
     stat_window: int,
-    range_bars: int = 1,
-    step: Optional[pd.Timedelta] = None,
+    range_bars: int,
+    step: pd.Timedelta,
 ) -> Dict[str, pd.Series]:
     """
     Compute rolling statistics over past weekly opening ranges.
@@ -152,8 +140,6 @@ def _weekly_stat_features(
     """
     features: Dict[str, pd.Series] = {}
 
-    if step is None:
-        step = _bar_step(df.index)
     in_range, after_range = _range_window(df, week_id, range_bars, step)
     bar_in_week = df.groupby(week_id).cumcount()
     valid = bar_in_week >= 1  # at least 1 bar into the week
@@ -251,17 +237,14 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame muss einen DatetimeIndex haben")
 
-        # Skip daily/weekly data — WOR is intraday only
-        if len(df) > 1:
-            median_diff = df.index.to_series().diff().median()
-            if median_diff >= pd.Timedelta(hours=20):
-                return df
+        step, ready = bar_timing(df)
+        if df.empty or step is None or step >= pd.Timedelta(hours=20):
+            return df
 
         rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)
 
         atr = _compute_atr(df, atr_period)
         week_id = _get_week_id(df)
-        step = _bar_step(df.index)
         features: Dict[str, pd.Series] = {}
 
         for rb in rb_list:
@@ -282,6 +265,7 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         self._feature_columns = list(features.keys())
 
         features_df = shift_features(features, df.index)
+        features_df.iloc[:ready] = np.nan
         return pd.concat([df, features_df], axis=1)
 
     def _resolve_range_bars(self, params=None) -> List[int]:

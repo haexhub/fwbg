@@ -19,6 +19,7 @@ from fwbg_sdk import (
     EPSILON,
 )
 from fwbg.utils.indicator_math import wilder_atr
+from fwbg.data.resample import bar_timing
 
 
 def _garman_klass(
@@ -95,22 +96,28 @@ def _yang_zhang(
     return np.sqrt(yz.clip(lower=0))
 
 
-def _infer_bars_per_day(index: pd.Index) -> float:
-    """
-    Bars per trading day, read from the bar spacing of the index.
+def _infer_bars_per_day(df: pd.DataFrame) -> tuple[float, int]:
+    """Return an annualisation scale and the first row where it is known.
 
-    - Intraday bars: median number of bars per calendar date that has data
-      (24 for hourly bars around the clock, 7 for hourly bars of a 7 hour
-      session, 96 for M15 around the clock).
-    - Daily or coarser bars: one bar per ``max(1, round(spacing_days * 5 / 7))``
-      trading days, so 1 for daily bars and 1/5 for weekly bars.
+    Use the nominal spacing on daily or longer data. For intraday data, fix
+    the median of the first five closed dates after the initial partial date.
+    A week of observations avoids relying on a single short session. Callers
+    can provide bars_per_day from a known schedule instead.
     """
-    if not isinstance(index, pd.DatetimeIndex) or len(index) < 2:
-        return 1.0
-    spacing = pd.Series(index).diff().dropna().median()
+    index = df.index
+    if not isinstance(index, pd.DatetimeIndex):
+        return 1.0, 0
+    spacing, ready = bar_timing(df)
+    if spacing is None:
+        return 1.0, len(df)
     if spacing >= pd.Timedelta(days=1):
-        return 1.0 / max(1, round(spacing / pd.Timedelta(days=1) * 5 / 7))
-    return float(pd.Series(index.normalize()).value_counts().median())
+        return 1.0 / max(1, round(spacing / pd.Timedelta(days=1) * 5 / 7)), ready
+    dates = index.normalize()
+    starts = np.flatnonzero(dates[1:] != dates[:-1]) + 1
+    if len(starts) < 6:
+        return 1.0, len(df)
+    counts = np.diff(starts[:6])
+    return float(np.median(counts)), max(ready, int(starts[5]))
 
 
 @register_indicator("volatility")
@@ -241,8 +248,9 @@ class VolatilityIndicators(BaseIndicator):
         # (24 = hourly bars around the clock, 1 = daily bars). Without an explicit
         # value it is read from the index spacing.
         bars_per_day = params.get("bars_per_day")
+        rv_ready = 0
         if bars_per_day is None:
-            bars_per_day = _infer_bars_per_day(df.index)
+            bars_per_day, rv_ready = _infer_bars_per_day(df)
         if (
             isinstance(bars_per_day, bool)
             or not isinstance(bars_per_day, (int, float))
@@ -256,6 +264,8 @@ class VolatilityIndicators(BaseIndicator):
         log_returns = np.log(df["C"] / (df["C"].shift(1) + EPSILON))
         rv = log_returns.rolling(rv_bars, min_periods=max(2, rv_bars // 2)).std()
         rv_annualized = rv * np.sqrt(252 * bars_per_day) * 100  # as percentage
+        # Row rv_ready can use estimates known as soon as that bar opens.
+        rv_annualized.iloc[: max(0, rv_ready - 1)] = np.nan
         features[f"vol_rv_{rv_window}"] = rv_annualized
 
         if "macro_vix" in df.columns:

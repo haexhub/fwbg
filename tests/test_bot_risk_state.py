@@ -215,7 +215,7 @@ def test_cache_holds_completed_utc_bars_only(monkeypatch):
         index=pd.date_range(hour - timedelta(hours=2), hour, freq="h"),
     )
     bot = _make_bot(adapter)
-    bot._compute_features = lambda df: df
+    bot._compute_features = lambda df, cfg: df
 
     bot._update_cache_if_needed("EURUSD")
     bot._update_cache_if_needed("EURUSD")
@@ -243,7 +243,7 @@ def test_initial_training_cache_excludes_forming_bar(monkeypatch):
     monkeypatch.setattr(bot_module, "get_model", lambda _name: Model)
     bot = _make_bot(adapter)
     bot.min_training_samples = 5
-    bot._compute_features = lambda df: df
+    bot._compute_features = lambda df, cfg: df
 
     assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
     assert bot.last_bar_time["EURUSD"] == hour - timedelta(hours=1)

@@ -31,7 +31,7 @@ Standard Supertrend indicator built on the ATR of high/low/close. Maintains stic
 - AC-002: st_direction takes only the values +1 (uptrend) or -1 (downtrend).
 - AC-003: st_flip equals 1.0 on bars where st_direction differs from the previous bar and 0.0 otherwise.
 - AC-004: Direction flips from +1 to -1 when close falls below the active lower band, and from -1 to +1 when close rises above the active upper band.
-- AC-005: The final upper band is non-increasing while price stays above the previous lower band, and the final lower band is non-decreasing while price stays below the previous upper band (sticky-band behavior).
+- AC-005: The final upper band can widen only after a close strictly above it. The final lower band can widen only after a close strictly below it. A close on the band keeps the same rule as a close inside.
 - AC-006: All emitted feature columns are shifted by one bar via shift_features so bar i's features depend only on data up to and including bar i-1.
 - AC-007: get_feature_columns() returns ['st_direction', 'st_flip']; get_signal_columns() returns an empty list (both columns are shifted); get_overlay_columns() returns ['_st_line'].
 - AC-008: get_default_params() returns {'period': 14, 'multiplier': 3.0} and get_param_schema() declares matching bounds (period 2..500 step 1, multiplier 0.5..20.0 step 0.5).

@@ -70,3 +70,15 @@ def test_get_plugin_does_not_hide_metadata_errors(monkeypatch):
 
     with pytest.raises(RuntimeError, match="broken metadata"):
         plugins.get_plugin("fwbg-core:broken")
+
+
+def test_list_of_strings_from_external_plugins_uses_the_api_schema_type(monkeypatch):
+    ema = plugins.get_plugin_registry().get("fwbg-core:ema")
+    schema = {"columns": {"type": "list[str]", "default": ["H"]}}
+    monkeypatch.setattr(ema, "get_param_schema", classmethod(lambda cls: schema))
+    output = plugins._plugin_to_dict("fwbg-core:ema")
+    assert output["param_schema"]["columns"] == {
+        "type": "list[string]",
+        "default": ["H"],
+    }
+    assert schema["columns"]["type"] == "list[str]"

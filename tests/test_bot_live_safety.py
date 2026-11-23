@@ -8,7 +8,14 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 
-from fwbg.adapters.broker import AccountInfo, OrderResult, OrderSide, OrderStatus
+from fwbg.adapters.broker import (
+    AccountInfo,
+    BarData,
+    OrderResult,
+    OrderSide,
+    OrderStatus,
+)
+from fwbg_sdk.enums import Timeframe
 from fwbg.bot import TradingBot
 
 
@@ -245,7 +252,7 @@ def test_last_bar_is_not_trained_as_a_down_sample(tmp_path, monkeypatch):
     monkeypatch.setattr(bot_module, "get_model", lambda _name: Model)
     bot = _bot(adapter, tmp_path)
     bot.min_training_samples = 5
-    bot._compute_features = lambda df: df
+    bot._compute_features = lambda df, cfg: df
 
     assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
     # 9 completed bars, the last has no next close: 8 labelled samples, all "up".
@@ -262,3 +269,92 @@ def test_signal_is_skipped_when_the_atr_is_unknown(tmp_path):
     bot._execute_signal("EURUSD", OrderSide.BUY, 0.9, bot.assets["EURUSD"])
 
     adapter.submit_order.assert_not_called()
+
+
+def test_train_and_stream_use_the_configured_indicator_params(tmp_path, monkeypatch):
+    import fwbg.bot as bot_module
+
+    index = pd.date_range(HOUR - timedelta(hours=50), periods=50, freq="h")
+    close = np.linspace(1.0, 1.1, len(index))
+    history = pd.DataFrame(
+        {"O": close, "H": close + 0.1, "L": close - 0.02, "C": close},
+        index=index,
+    )
+    adapter = MagicMock()
+    adapter.get_historical_bars.return_value = history
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: HOUR)
+    model = MagicMock()
+    monkeypatch.setattr(bot_module, "get_model", lambda name: lambda: model)
+    bot = TradingBot(
+        adapter=adapter,
+        assets_config={
+            "EURUSD": {
+                "features": ["ibs_prev", "ema_dist_3", "vwap"],
+                "timeframe": "HOUR_1",
+                "indicators": [
+                    {"name": "ibs", "signal_columns_as_features": True},
+                    {"name": "ema", "params": {"lines": [{"period": 3}]}},
+                    {"name": "vwap"},
+                ],
+            }
+        },
+        account_config={},
+        stats_dir=str(tmp_path),
+        min_training_samples=5,
+    )
+    assert bot._train_model("EURUSD", bot.assets["EURUSD"])
+    train = model.train.call_args.args[0]
+    assert train.columns.tolist() == ["ibs_prev", "ema_dist_3", "vwap"]
+    np.testing.assert_allclose(train["ibs_prev"], 1.0 / 6.0)
+    assert "ema_dist_21" not in bot.features_cache["EURUSD"]
+
+    bot._update_cache_with_bar(
+        "EURUSD", BarData("EURUSD", Timeframe.H1, HOUR, 1.1, 1.2, 1.0, 1.19, 7.0)
+    )
+    updated = bot.features_cache["EURUSD"]
+    assert updated.loc[HOUR, "V"] == 7.0
+    assert bot.ohlc_cache["EURUSD"].loc[index, "V"].isna().all()
+    np.testing.assert_allclose(updated.loc[HOUR, "ibs_prev"], 1.0 / 6.0)
+    assert pd.notna(updated.loc[HOUR, "ema_dist_3"])
+
+
+def test_optimizer_exports_actual_indicator_configuration_for_the_bot(monkeypatch):
+    from fwbg.core.config import StrategyConfig
+    from fwbg.data import config as data_config
+    from fwbg.optimization.process import process_symbol
+    from tests.optimization.symbol_harness import (
+        METADATA,
+        SYMBOL_FILE,
+        WINNING,
+        patch_development,
+    )
+
+    indicators = [
+        {"name": "ibs", "signal_columns_as_features": True},
+        {"name": "ema", "params": {"lines": [{"period": 3}]}},
+    ]
+    strategy = StrategyConfig.from_dict(
+        {**METADATA, "pipeline": {"indicators": indicators}}
+    )
+    monkeypatch.setattr(data_config, "TIMEFRAME", "HOUR_1")
+    patch_development(monkeypatch, WINNING)
+    result = process_symbol(SYMBOL_FILE, strategy)
+    assert result["status"] == "ok", result
+    assert result["config"]["indicators"] == indicators
+    assert result["config"]["timeframe"] == "HOUR_1"
+
+
+def test_signal_check_is_skipped_when_cache_refresh_fails(tmp_path, monkeypatch):
+    import fwbg.bot as bot_module
+
+    adapter = _adapter(FILLED)
+    adapter.get_historical_bars.side_effect = RuntimeError("broker unavailable")
+    bot = _bot(adapter, tmp_path)
+    bot.last_bar_time["EURUSD"] = HOUR - timedelta(hours=3)
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: HOUR)
+    bot._check_signal = MagicMock()
+
+    bot._check_all_signals()
+
+    bot._check_signal.assert_not_called()
+    assert "EURUSD" not in bot.last_signal_hour
